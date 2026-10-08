@@ -80,22 +80,22 @@ export default function PieceInfoPanel({ piece, onClose, onIssue, ap, compact = 
       {/* 血量 + 属性 */}
       {compact ? (
         <div className="mb-1.5">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="font-label text-[9px] text-foreground-600 whitespace-nowrap">
-              血量 {piece.hp}/{piece.maxHp}
-            </span>
-            <div className="flex-1 h-1.5 rounded-full bg-background-200 overflow-hidden">
-              <div
-                className={`h-full transition-all ${hpPct > 0.5 ? 'bg-accent-400' : hpPct > 0.25 ? 'bg-primary-400' : 'bg-secondary-400'}`}
-                style={{ width: `${hpPct * 100}%` }}
-              ></div>
-            </div>
-          </div>
           <div className="grid grid-cols-4 gap-1">
             <Stat compact icon="ri-sword-line" label="攻击" value={String(piece.atk + piece.bonusAtk)} />
             <Stat compact icon="ri-run-line" label="移动" value={String(piece.move + piece.bonusMove)} />
             <Stat compact icon="ri-focus-3-line" label="范围" value={String(piece.range)} />
             <Stat compact icon="ri-heart-pulse-line" label="治疗" value={piece.heal > 0 ? String(piece.heal) : '—'} />
+          </div>
+          <div className="flex items-center gap-2 mt-1">
+            <span className="font-label text-[9px] text-foreground-600 whitespace-nowrap">
+              血量 {piece.hp}/{piece.maxHp}
+            </span>
+            <div className="flex-1 h-1 rounded-full bg-background-200 overflow-hidden">
+              <div
+                className={`h-full transition-all ${hpPct > 0.5 ? 'bg-accent-400' : hpPct > 0.25 ? 'bg-primary-400' : 'bg-secondary-400'}`}
+                style={{ width: `${hpPct * 100}%` }}
+              ></div>
+            </div>
           </div>
         </div>
       ) : (

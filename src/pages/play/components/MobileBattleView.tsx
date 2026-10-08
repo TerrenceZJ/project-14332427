@@ -230,7 +230,7 @@ export default function MobileBattleView({
     }
     if (validTab === 'cmd') {
       return (
-        <div className="relative h-full min-h-0 flex flex-col gap-3 overflow-y-auto">
+        <div className="relative h-full min-h-0 flex flex-col gap-2 overflow-y-auto">
           {commandPiece ? (
             <PieceInfoPanel
               piece={commandPiece}
@@ -241,21 +241,19 @@ export default function MobileBattleView({
             />
           ) : (
           <>
-          {/* 自动指令视图(常驻底层,棋子面板滑出后平滑露出) */}
+          {/* 自动指令视图 */}
           <div>
-          <div>
-            <div className="font-label text-[10px] text-foreground-600 mb-1.5">自动指令风格</div>
+            <div className="font-label text-[9px] text-foreground-600 mb-1">自动指令风格</div>
             <div className="flex items-center gap-0.5 p-0.5 rounded-full bg-background-200/70 border border-background-300/50">
               {AUTO_STYLES.map((o) => (
                 <button
                   key={o.id}
                   onClick={() => onAutoStyle(o.id)}
                   disabled={b.busy}
-                  className={`flex-1 flex items-center justify-center gap-1 px-1 py-1.5 rounded-full font-label text-[11px] whitespace-nowrap transition-colors cursor-pointer disabled:opacity-50 ${
+                  className={`flex-1 flex items-center justify-center gap-0.5 px-1 py-1 rounded-full font-label text-[10px] whitespace-nowrap transition-colors cursor-pointer disabled:opacity-50 ${
                     autoStyle === o.id ? 'bg-primary-500 text-background-50' : 'text-foreground-600'
                   }`}
                 >
-                  <i className={`${o.icon} w-3.5 h-3.5 flex items-center justify-center`}></i>
                   {o.label}
                 </button>
               ))}
@@ -264,40 +262,36 @@ export default function MobileBattleView({
           <button
             onClick={() => b.autoCommand(autoStyle)}
             disabled={b.busy}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md font-label text-sm border border-accent-500/50 text-accent-300 hover:bg-accent-500/10 disabled:opacity-50 cursor-pointer whitespace-nowrap"
+            className="w-full flex items-center justify-center gap-1.5 px-2 py-2 rounded-md font-label text-xs border border-accent-500/50 text-accent-300 hover:bg-accent-500/10 disabled:opacity-50 cursor-pointer whitespace-nowrap"
           >
-            <i className="ri-magic-line w-4 h-4 flex items-center justify-center"></i>
+            <i className="ri-magic-line w-3.5 h-3.5 flex items-center justify-center"></i>
             一键自动指令
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <button
               onClick={() => b.undoLastStep()}
               disabled={b.busy || !hasPlannedPaths}
-              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-md font-label text-xs border border-background-300 text-foreground-700 hover:text-foreground-950 hover:border-background-400 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+              className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md font-label text-[10px] border border-background-300 text-foreground-700 hover:text-foreground-950 hover:border-background-400 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
             >
-              <i className="ri-arrow-go-back-line w-4 h-4 flex items-center justify-center"></i>
-              撤销上一只
+              <i className="ri-arrow-go-back-line w-3 h-3 flex items-center justify-center"></i>
+              撤销
             </button>
             <button
               onClick={() => b.clearAllPaths()}
               disabled={b.busy || !hasPlannedPaths}
-              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-md font-label text-xs border border-background-300 text-foreground-700 hover:text-foreground-950 hover:border-background-400 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+              className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md font-label text-[10px] border border-background-300 text-foreground-700 hover:text-foreground-950 hover:border-background-400 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
             >
-              <i className="ri-eraser-line w-4 h-4 flex items-center justify-center"></i>
-              清除全部路径
+              <i className="ri-eraser-line w-3 h-3 flex items-center justify-center"></i>
+              清除
             </button>
-          </div>
-          <button
-            onClick={onOpenEnemyDeck}
-            disabled={b.busy}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md font-label text-sm border border-secondary-500/50 text-secondary-300 hover:bg-secondary-500/10 disabled:opacity-50 cursor-pointer whitespace-nowrap"
-          >
-            <i className="ri-eye-line w-4 h-4 flex items-center justify-center"></i>
-            查看敌方牌组
-          </button>
-          <p className="text-[10px] text-foreground-600 leading-relaxed">
-            自动指令会按当前风格,为所有可行动灵兽一次性下达指令,并在棋盘上以虚线预览路径。
-          </p>
+            <button
+              onClick={onOpenEnemyDeck}
+              disabled={b.busy}
+              className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md font-label text-[10px] border border-secondary-500/50 text-secondary-300 hover:bg-secondary-500/10 disabled:opacity-50 cursor-pointer whitespace-nowrap"
+            >
+              <i className="ri-eye-line w-3 h-3 flex items-center justify-center"></i>
+              敌方牌组
+            </button>
           </div>
           </>
           )}
@@ -317,59 +311,59 @@ export default function MobileBattleView({
       style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       {/* 顶栏:返回 + 阶段 + 倒计时 */}
-      <header className="shrink-0 h-12 px-3 flex items-center gap-2 border-b border-background-200/60 bg-background-50/95 backdrop-blur">
+      <header className="shrink-0 h-10 px-2 flex items-center gap-1 border-b border-background-200/60 bg-background-50/95 backdrop-blur">
         <button
           onClick={() => navigate('/')}
           aria-label="返回大厅"
-          className="w-9 h-9 -ml-1 flex items-center justify-center rounded-md text-foreground-700 hover:text-primary-300 cursor-pointer"
+          className="w-8 h-8 flex items-center justify-center rounded-md text-foreground-700 hover:text-primary-300 cursor-pointer"
         >
-          <i className="ri-arrow-left-line text-lg w-5 h-5 flex items-center justify-center"></i>
+          <i className="ri-arrow-left-line text-base w-4 h-4 flex items-center justify-center"></i>
         </button>
         <div className="flex-1 min-w-0 text-center">
-          <div className="font-heading text-sm text-foreground-950 truncate">{phaseLabel[state.phase]}</div>
+          <div className="font-heading text-xs text-foreground-950 truncate">{phaseLabel[state.phase]}</div>
         </div>
         <button
           onClick={onToggleView}
-          className="w-9 h-9 flex items-center justify-center rounded-md text-foreground-700 hover:text-primary-300 cursor-pointer"
+          className="w-8 h-8 flex items-center justify-center rounded-md text-foreground-700 hover:text-primary-300 cursor-pointer"
           title="切换桌面端"
         >
-          <i className="ri-computer-line text-lg w-5 h-5 flex items-center justify-center"></i>
+          <i className="ri-computer-line text-base w-4 h-4 flex items-center justify-center"></i>
         </button>
         {/* 视角缩放:从棋盘里移出来放到顶栏,避免遮挡棋子导致无法操作 */}
         <div className="shrink-0 flex items-center gap-0.5 rounded-full border border-background-300/60 bg-background-100/85 p-0.5">
           <button
             onClick={() => boardRef.current?.zoomOut()}
             aria-label="缩小棋盘"
-            className="w-6 h-6 flex items-center justify-center rounded-full text-foreground-600 hover:text-primary-300 cursor-pointer"
+            className="w-5 h-5 flex items-center justify-center rounded-full text-foreground-600 hover:text-primary-300 cursor-pointer"
           >
-            <i className="ri-subtract-line text-sm w-4 h-4 flex items-center justify-center"></i>
+            <i className="ri-subtract-line text-xs w-3 h-3 flex items-center justify-center"></i>
           </button>
           <button
             onClick={() => boardRef.current?.resetView()}
             aria-label="重置视角"
-            className="min-w-8 h-6 px-1 flex items-center justify-center rounded-full font-label text-[9px] text-foreground-600 hover:text-primary-300 cursor-pointer tabular-nums"
+            className="min-w-6 h-5 px-0.5 flex items-center justify-center rounded-full font-label text-[8px] text-foreground-600 hover:text-primary-300 cursor-pointer tabular-nums"
           >
             {Math.round(zoomLevel * 100)}%
           </button>
           <button
             onClick={() => boardRef.current?.zoomIn()}
             aria-label="放大棋盘"
-            className="w-6 h-6 flex items-center justify-center rounded-full text-foreground-600 hover:text-primary-300 cursor-pointer"
+            className="w-5 h-5 flex items-center justify-center rounded-full text-foreground-600 hover:text-primary-300 cursor-pointer"
           >
-            <i className="ri-add-line text-sm w-4 h-4 flex items-center justify-center"></i>
+            <i className="ri-add-line text-xs w-3 h-3 flex items-center justify-center"></i>
           </button>
         </div>
         {countdown ? (
-          <span className={`font-heading text-base tabular-nums ${count <= 10 ? 'text-secondary-400' : 'text-foreground-900'}`}>
+          <span className={`font-heading text-xs tabular-nums ${count <= 10 ? 'text-secondary-400' : 'text-foreground-900'}`}>
             {mm}:{ss}
           </span>
         ) : (
-          <span className="w-9"></span>
+          <span className="w-8"></span>
         )}
       </header>
 
-      {/* 棋盘(顶部战况栏由棋盘自身渲染) */}
-      <section className="relative flex-1 min-h-0 p-1.5 pt-3">
+      {/* 棋盘区域 - 占据所有可用空间 */}
+      <section className="relative flex-1 min-h-0">
         <BattleBoard
           state={state}
           visible={visible}
@@ -382,9 +376,6 @@ export default function MobileBattleView({
           ref={boardRef}
           onZoomChange={setZoomLevel}
         />
-
-
-
       </section>
 
       {/* 底部抽屉 */}
