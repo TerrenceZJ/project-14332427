@@ -437,7 +437,7 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
             const bx = (ev.x + 0.5) / COLS * 100;
             const by = (ev.y + 0.5) / ROWS * 100;
             const isPlayerAttack = state.pieces.some(p => p.x === ev.fx && p.y === ev.fy && p.team === 'player');
-            const lineColor = isPlayerAttack ? 'oklch(var(--primary-400))' : 'oklch(var(--secondary-400))';
+            const lineColor = isPlayerAttack ? 'oklch(var(--accent-400))' : 'oklch(var(--secondary-400))';
 
             return (
               <Fragment key={`attack-${i}`}>
