@@ -14,13 +14,14 @@ const SHARDS = [
 interface Props {
   x: number;
   y: number;
-  cellPct: number;
 }
 
 /** 棋子被击杀时的碎裂 / 消散特效(暗色冲击环 + 飞散碎片 + 骷髅浮现) */
-export default function DeathBurst({ x, y, cellPct }: Props) {
+export default function DeathBurst({ x, y }: Props) {
   const cx = `${((x + 0.5) / COLS) * 100}%`;
   const cy = `${((y + 0.5) / ROWS) * 100}%`;
+  const cellW = 100 / COLS;
+  const cellH = 100 / ROWS;
 
   return (
     <>
@@ -29,8 +30,8 @@ export default function DeathBurst({ x, y, cellPct }: Props) {
         style={{
           left: cx,
           top: cy,
-          width: `${cellPct * 1.1}%`,
-          height: `${cellPct * 1.1}%`,
+          width: `${cellW * 1.1}%`,
+          height: `${cellH * 1.1}%`,
           border: '2px solid oklch(var(--secondary-400) / 0.85)',
           background: 'oklch(var(--background-950) / 0.35)',
           zIndex: 42,
@@ -44,8 +45,8 @@ export default function DeathBurst({ x, y, cellPct }: Props) {
           style={{
             left: cx,
             top: cy,
-            width: `${cellPct * 0.26}%`,
-            height: `${cellPct * 0.26}%`,
+            width: `${cellW * 0.26}%`,
+            height: `${cellH * 0.26}%`,
             background: 'oklch(var(--foreground-700))',
             clipPath: 'polygon(50% 0, 100% 50%, 50% 100%, 0 50%)',
             '--dx': s.dx,

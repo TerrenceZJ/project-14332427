@@ -108,7 +108,7 @@ export default function MobilePieceRail({
                   sel ? 'border-primary-400 bg-primary-500/15' : 'border-background-300 bg-background-200'
                 } ${st.text}`}
               >
-                <i className={`${card?.icon ?? def.icon} text-lg w-5 h-5 flex items-center justify-center`}></i>
+                <i className={`${def.icon} text-lg w-5 h-5 flex items-center justify-center`}></i>
               </div>
 
               {/* 种族(突出) */}

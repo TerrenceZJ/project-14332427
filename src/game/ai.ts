@@ -1,13 +1,13 @@
 import type { GameState, Piece, Pt } from './types';
 import { COLS, MID, ROWS, dist, inBounds, key } from './constants';
 
-/** AI 部署:上半场分散布置,并随机指定一只为灵主 */
+/** AI 部署:右半场分散布置,并随机指定一只为灵主 */
 export function aiDeploy(s: GameState) {
   const mine = s.pieces.filter((p) => p.team === 'enemy');
   mine.forEach((p) => { p.x = -1; p.y = -1; p.placed = false; p.isLord = false; });
 
   const slots: { x: number; y: number }[] = [];
-  for (let y = 1; y < MID - 1; y++) for (let x = 1; x < COLS - 1; x++) slots.push({ x, y });
+  for (let y = 1; y < ROWS - 1; y++) for (let x = MID + 1; x < COLS - 1; x++) slots.push({ x, y });
   slots.sort(() => Math.random() - 0.5);
 
   mine.forEach((p, i) => {
@@ -17,9 +17,8 @@ export function aiDeploy(s: GameState) {
     p.placed = true;
   });
 
-  // 灵主偏向后场中心
   const lord = mine[Math.floor(Math.random() * mine.length)];
-  const centerSlots = slots.filter((sl) => sl.y <= 2).sort((a, b) => Math.abs(a.x - COLS / 2) - Math.abs(b.x - COLS / 2));
+  const centerSlots = slots.filter((sl) => sl.x >= COLS - 2).sort((a, b) => Math.abs(a.y - ROWS / 2) - Math.abs(b.y - ROWS / 2));
   if (centerSlots[0]) {
     const occupied = mine.filter((p) => p !== lord);
     const free = centerSlots.find((sl) => !occupied.some((o) => o.x === sl.x && o.y === sl.y));

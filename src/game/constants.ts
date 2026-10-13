@@ -1,6 +1,6 @@
 export const COLS = 10;
-export const ROWS = 10;
-export const MID = ROWS / 2; // 上半场敌方, 下半场己方
+export const ROWS = 8;
+export const MID = Math.floor(COLS / 2); // 左半场己方 (x < MID), 右半场敌方 (x >= MID)
 export const START_AP = 6;
 export const MAX_TURNS = 12;
 

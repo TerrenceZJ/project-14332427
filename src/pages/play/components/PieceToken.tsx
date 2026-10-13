@@ -5,14 +5,17 @@ import { COLS, ROWS } from '@/game/constants';
 
 interface Props {
   piece: Piece;
-  cellPct: number;
   revealLord: boolean;
   selected?: boolean;
   targetable?: boolean;
   faded?: boolean;
+  /** 精简模式(小地图):只显示棋子圆点图标,省略血条与状态标记 */
+  minimal?: boolean;
+  /** 是否渲染血条(主棋盘血条单独成层,由外部统一绘制) */
+  showHpBar?: boolean;
 }
 
-export default function PieceToken({ piece, cellPct, revealLord, selected, targetable, faded }: Props) {
+export default function PieceToken({ piece, revealLord, selected, targetable, faded, minimal, showHpBar = true }: Props) {
   const def = BEASTS[piece.type];
   const isPlayer = piece.team === 'player';
 
@@ -22,6 +25,8 @@ export default function PieceToken({ piece, cellPct, revealLord, selected, targe
 
   const left = `${((piece.x + 0.5) / COLS) * 100}%`;
   const top = `${((piece.y + 0.5) / ROWS) * 100}%`;
+  const cellW = 100 / COLS;
+  const cellH = 100 / ROWS;
   const ghostColor = isPlayer ? 'oklch(var(--accent-500))' : 'oklch(var(--secondary-500))';
 
   // 位置变化 → 移动过程中显示拖尾,到达后播放落地涟漪
@@ -40,6 +45,46 @@ export default function PieceToken({ piece, cellPct, revealLord, selected, targe
     return () => { window.clearTimeout(t1); window.clearTimeout(t2); };
   }, [piece.x, piece.y]);
 
+  if (minimal) {
+    const miniBase = isPlayer
+      ? 'bg-blue-500 border-blue-200 text-white'
+      : 'bg-red-500 border-red-200 text-white';
+    const miniGhost = isPlayer ? 'rgba(59,130,246,0.5)' : 'rgba(239,68,68,0.5)';
+    return (
+      <>
+        <span
+          className="absolute rounded-full pointer-events-none"
+          style={{
+            left, top,
+            width: `${cellW * 0.7}%`,
+            height: `${cellH * 0.7}%`,
+            transform: 'translate(-50%, -50%)',
+            background: miniGhost,
+            opacity: moving ? 0.3 : 0,
+            transition: 'left .62s ease, top .62s ease',
+            transitionDelay: '80ms',
+            zIndex: 22,
+          }}
+        ></span>
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            left, top,
+            width: `${cellW}%`,
+            height: `${cellH}%`,
+            transform: 'translate(-50%, -50%)',
+            transition: 'left .62s ease, top .62s ease',
+            zIndex: 30,
+          }}
+        >
+          <div className={`relative w-[64%] h-[64%] mx-auto mt-[18%] rounded-full border flex items-center justify-center ${miniBase}`}>
+            <i className={`${def.icon} text-[10px] w-3 h-3 flex items-center justify-center`}></i>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       {/* 移动拖尾:常驻残影,靠延迟过渡制造落后的残像,静止时隐藏 */}
@@ -47,8 +92,8 @@ export default function PieceToken({ piece, cellPct, revealLord, selected, targe
         className="absolute rounded-full pointer-events-none"
         style={{
           left, top,
-          width: `${cellPct * 0.7}%`,
-          height: `${cellPct * 0.7}%`,
+          width: `${cellW * 0.7}%`,
+          height: `${cellH * 0.7}%`,
           transform: 'translate(-50%, -50%)',
           background: ghostColor,
           opacity: moving ? 0.28 : 0,
@@ -61,8 +106,8 @@ export default function PieceToken({ piece, cellPct, revealLord, selected, targe
         className="absolute rounded-full pointer-events-none"
         style={{
           left, top,
-          width: `${cellPct * 0.5}%`,
-          height: `${cellPct * 0.5}%`,
+          width: `${cellW * 0.5}%`,
+          height: `${cellH * 0.5}%`,
           transform: 'translate(-50%, -50%)',
           background: ghostColor,
           opacity: moving ? 0.15 : 0,
@@ -77,8 +122,8 @@ export default function PieceToken({ piece, cellPct, revealLord, selected, targe
         style={{
           left,
           top,
-          width: `${cellPct}%`,
-          height: `${cellPct}%`,
+          width: `${cellW}%`,
+          height: `${cellH}%`,
           transform: 'translate(-50%, -50%)',
           transition: 'left .62s ease, top .62s ease, opacity .3s ease',
           opacity: faded ? 0.35 : 1,
@@ -104,7 +149,7 @@ export default function PieceToken({ piece, cellPct, revealLord, selected, targe
               selected ? 'ring-2 ring-primary-400 ring-offset-1 ring-offset-background-50' : targetable ? 'ring-2 ring-accent-300 ring-offset-1 ring-offset-background-50' : ''
             }`}
           >
-            <i className={`${def.icon} text-[min(2.2vw,13px)] w-3 h-3 flex items-center justify-center`}></i>
+            <i className={`${def.icon} text-xl w-5 h-5 flex items-center justify-center`}></i>
 
             {revealLord && piece.isLord && (
               <span className="absolute -top-[45%] left-1/2 -translate-x-1/2 text-primary-300">
@@ -149,17 +194,19 @@ export default function PieceToken({ piece, cellPct, revealLord, selected, targe
           </div>
 
           {/* HP 刻度条 + 剩余血量数字 */}
-          <div className="absolute -bottom-[14%] left-1/2 -translate-x-1/2 flex items-center gap-1">
-            <div className="flex items-center gap-[1.5px]">
-              {Array.from({ length: piece.maxHp }).map((_, i) => (
-                <div
-                  key={i}
-                  className={`w-[3px] h-[6px] rounded-[1px] ${i < piece.hp ? 'bg-accent-400' : 'bg-background-300/70'}`}
-                ></div>
-              ))}
+          {showHpBar && (
+            <div className="absolute -bottom-[14%] left-1/2 -translate-x-1/2 flex items-center gap-1">
+              <div className="flex items-center gap-[1.5px]">
+                {Array.from({ length: piece.maxHp }).map((_, i) => (
+                  <div
+                    key={i}
+                    className={`w-[3px] h-[6px] rounded-[1px] ${i < piece.hp ? 'bg-green-400' : 'bg-background-300/70'}`}
+                  ></div>
+                ))}
+              </div>
+              <span className="font-heading text-[9px] leading-none text-foreground-950">{piece.hp}</span>
             </div>
-            <span className="font-heading text-[9px] leading-none text-foreground-950">{piece.hp}</span>
-          </div>
+          )}
         </div>
       </div>
     </>

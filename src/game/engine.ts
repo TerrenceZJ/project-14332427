@@ -158,8 +158,8 @@ export function placePiece(state: GameState, pieceId: string, x: number, y: numb
   if (state.phase !== 'deploy') return state;
   const p = state.pieces.find((q) => q.id === pieceId);
   if (!p || p.team !== 'player') return state;
-  if (y < MID || y >= ROWS) return state;
-  if (x < 0 || x >= COLS) return state;
+  if (x >= MID || x < 0) return state;
+  if (y < 0 || y >= ROWS) return state;
   if (at(state, x, y)) return state;
   const s = clone(state);
   const np = s.pieces.find((q) => q.id === pieceId)!;
@@ -186,8 +186,8 @@ export function redeployPiece(state: GameState, pieceId: string, x: number, y: n
   if (state.phase !== 'deploy') return state;
   const p = state.pieces.find((q) => q.id === pieceId);
   if (!p || p.team !== 'player' || !p.placed) return state;
-  if (y < MID || y >= ROWS) return state;
-  if (x < 0 || x >= COLS) return state;
+  if (x >= MID || x < 0) return state;
+  if (y < 0 || y >= ROWS) return state;
   if (at(state, x, y)) return state;
   if (p.x === x && p.y === y) return state;
   const s = clone(state);
@@ -214,7 +214,7 @@ export function autoDeploy(state: GameState): GameState {
   const mine = s.pieces.filter((p) => p.team === 'player');
   mine.forEach((p) => { p.x = -1; p.y = -1; p.placed = false; p.isLord = false; });
   const slots: { x: number; y: number }[] = [];
-  for (let y = MID + 1; y < ROWS - 1; y++) for (let x = 1; x < COLS - 1; x++) slots.push({ x, y });
+  for (let y = 1; y < ROWS - 1; y++) for (let x = 1; x < MID - 1; x++) slots.push({ x, y });
   slots.sort(() => Math.random() - 0.5);
   mine.forEach((p, i) => {
     const slot = slots[i % slots.length];
@@ -262,15 +262,15 @@ function dealDirectDamage(s: GameState, p: Piece, amount: number, events?: TurnE
 
 /** 击退:朝己方底线方向后退 steps 格 */
 function knockback(s: GameState, p: Piece, steps: number) {
-  const dir = p.y < MID ? -1 : 1;
-  let cy = p.y;
+  const dir = p.x < MID ? -1 : 1;
+  let cx = p.x;
   for (let i = 0; i < steps; i++) {
-    const ny = cy + dir;
-    if (!inBounds(p.x, ny)) break;
-    if (at(s, p.x, ny)) break;
-    cy = ny;
+    const nx = cx + dir;
+    if (!inBounds(nx, p.y)) break;
+    if (at(s, nx, p.y)) break;
+    cx = nx;
   }
-  if (cy !== p.y) p.y = cy;
+  if (cx !== p.x) p.x = cx;
 }
 
 function shufflePositions(s: GameState, pieces: Piece[]) {
@@ -781,7 +781,7 @@ export function autoCommand(state: GameState, style: AutoCommandStyle = 'aggress
         a.mode = 'attack';
         if (best) a.attackTarget = best.id;
       } else {
-        a.path = planPath(a, { x: a.x, y: ROWS - 1 }, s, budget);
+        a.path = planPath(a, { x: 0, y: a.y }, s, budget);
         a.mode = 'defend';
         a.attackTarget = undefined;
       }
@@ -795,10 +795,10 @@ export function autoCommand(state: GameState, style: AutoCommandStyle = 'aggress
       a.path = d > a.range ? planPath(a, best, s, budget) : [];
       a.attackTarget = best.id;
     } else if (style === 'focusLord') {
-      a.path = planPath(a, { x: Math.floor(COLS / 2), y: 0 }, s, budget);
+      a.path = planPath(a, { x: COLS - 1, y: Math.floor(ROWS / 2) }, s, budget);
       a.attackTarget = undefined;
     } else {
-      a.path = planPath(a, { x: a.x, y: 0 }, s, budget);
+      a.path = planPath(a, { x: COLS - 1, y: a.y }, s, budget);
       a.attackTarget = undefined;
     }
     a.mode = 'attack';

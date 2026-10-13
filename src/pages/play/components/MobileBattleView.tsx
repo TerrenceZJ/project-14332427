@@ -5,10 +5,12 @@ import type { Battle } from '@/pages/play/hooks/useBattle';
 import { LINEUP_SIZE } from '@/game/constants';
 import BattleBoard, { type BattleBoardHandle } from './BattleBoard';
 import CountdownRingFrame from './CountdownRingFrame';
-import HandPanel from './HandPanel';
 import MobilePieceRail from './MobilePieceRail';
 import PieceInfoPanel from './PieceInfoPanel';
 import BattleLog from './BattleLog';
+import PokerHandFan from './PokerHandFan';
+import CardCenterOverlay from './CardCenterOverlay';
+import { CARDS_BY_ID } from '@/game/cards';
 
 type Tab = 'hand' | 'piece' | 'cmd' | 'log';
 
@@ -59,7 +61,6 @@ interface Props {
   onPhaseTimeout: () => void;
   onOpenEnemyDeck: () => void;
   onReopenSummon: () => void;
-  onToggleView: () => void;
 }
 
 /** 移动端(竖屏)对战界面:顶栏 + 大棋盘 + 底部可上滑抽屉(手牌 / 棋子 / 指令 / 日志) */
@@ -82,12 +83,12 @@ export default function MobileBattleView({
   onPhaseTimeout,
   onOpenEnemyDeck,
   onReopenSummon,
-  onToggleView,
 }: Props) {
   const navigate = useNavigate();
   const { state } = b;
   const [tab, setTab] = useState<Tab>('hand');
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
+  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const boardRef = useRef<BattleBoardHandle>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
 
@@ -97,17 +98,23 @@ export default function MobileBattleView({
   const canPlay = state.phase === 'card1' || state.phase === 'card2';
   const canEnd = canPlay || isCommand;
 
-  // 部署阶段无手牌,自动切到棋子页
+  // 部署阶段无手牌,自动切到棋子页并展开抽屉
   useEffect(() => {
-    if (isDeploy && (tab === 'hand' || tab === 'cmd')) setTab('piece');
+    if (isDeploy) {
+      if (tab === 'hand' || tab === 'cmd') setTab('piece');
+      setOpen(true);
+    }
   }, [isDeploy, tab]);
 
-  // 进入抽卡 / 援救阶段默认展示手牌
+  // 进入抽卡 / 援救阶段自动展开手牌
   useEffect(() => {
-    if (state.phase === 'card1' || state.phase === 'card2') setTab('hand');
+    if (state.phase === 'card1' || state.phase === 'card2') {
+      setTab('hand');
+      setOpen(true);
+    }
   }, [state.phase]);
 
-  // 进入指令阶段,自动切到「指令」界面并展开抽屉
+  // 进入指令阶段,自动切到「指令」界面并弹出
   useEffect(() => {
     if (state.phase === 'command') {
       setTab('cmd');
@@ -115,13 +122,28 @@ export default function MobileBattleView({
     }
   }, [state.phase]);
 
-  // 进入同步执行阶段,自动切到「日志」并展开抽屉,方便看结算过程
+  // 进入同步执行阶段,自动切到「日志」(收起)
   useEffect(() => {
     if (state.phase === 'execute') {
       setTab('log');
-      setOpen(true);
+      setOpen(false);
     }
   }, [state.phase]);
+
+  // 使用卡牌技能(进入目标选择)时收起手牌,使用完/取消后再次弹出
+  const prevPendingRef = useRef<string | null>(null);
+  useEffect(() => {
+    const prev = prevPendingRef.current;
+    prevPendingRef.current = pendingCardId;
+    if (pendingCardId && !prev) {
+      setOpen(false);
+    } else if (!pendingCardId && prev) {
+      if (state.phase === 'card1' || state.phase === 'card2') {
+        setTab('hand');
+        setOpen(true);
+      }
+    }
+  }, [pendingCardId]);
 
   // 阶段倒计时(部署 60s / 抽卡 120s / 指令 60s / 援救 40s)
   const countdown = isDeploy || canPlay || isCommand;
@@ -182,11 +204,10 @@ export default function MobileBattleView({
         ) ?? null
       : null;
 
-  // 指令阶段选中棋子后,自动切到「指令」并展开
+  // 指令阶段选中棋子后,自动切到「指令」(不自动展开)
   useEffect(() => {
     if (isCommand && commandPiece) {
       setTab('cmd');
-      setOpen(true);
     }
   }, [isCommand, commandPiece]);
 
@@ -203,19 +224,7 @@ export default function MobileBattleView({
     setOpen(true);
   };
 
-  const content = (() => {
-    if (validTab === 'hand') {
-      return (
-        <HandPanel
-          state={state}
-          className="h-full"
-          orientation="horizontal"
-          onPlayCard={onPlayCard}
-          pendingCardId={pendingCardId}
-          onCancel={onCancelCard}
-        />
-      );
-    }
+  const drawerContent = (() => {
     if (validTab === 'piece') {
       return (
         <MobilePieceRail
@@ -228,9 +237,16 @@ export default function MobileBattleView({
         />
       );
     }
+    return null;
+  })();
+
+  const overlayContent = (() => {
+    if (validTab === 'hand') {
+      return <PokerHandFan state={state} onSelectCard={setSelectedCardId} />;
+    }
     if (validTab === 'cmd') {
       return (
-        <div className="relative h-full min-h-0 flex flex-col gap-2 overflow-y-auto">
+        <div className="h-full min-h-0 flex flex-col gap-2 overflow-y-auto">
           {commandPiece ? (
             <PieceInfoPanel
               piece={commandPiece}
@@ -298,11 +314,10 @@ export default function MobileBattleView({
         </div>
       );
     }
-    return (
-      <div className="h-full">
-        <BattleLog log={state.log} />
-      </div>
-    );
+    if (validTab === 'log') {
+      return <BattleLog log={state.log} />;
+    }
+    return null;
   })();
 
   return (
@@ -322,13 +337,6 @@ export default function MobileBattleView({
         <div className="flex-1 min-w-0 text-center">
           <div className="font-heading text-xs text-foreground-950 truncate">{phaseLabel[state.phase]}</div>
         </div>
-        <button
-          onClick={onToggleView}
-          className="w-8 h-8 flex items-center justify-center rounded-md text-foreground-700 hover:text-primary-300 cursor-pointer"
-          title="切换桌面端"
-        >
-          <i className="ri-computer-line text-base w-4 h-4 flex items-center justify-center"></i>
-        </button>
         {/* 视角缩放:从棋盘里移出来放到顶栏,避免遮挡棋子导致无法操作 */}
         <div className="shrink-0 flex items-center gap-0.5 rounded-full border border-background-300/60 bg-background-100/85 p-0.5">
           <button
@@ -376,6 +384,19 @@ export default function MobileBattleView({
           ref={boardRef}
           onZoomChange={setZoomLevel}
         />
+
+        {/* 弹出窗口覆盖层:手牌 / 指令 / 日志 */}
+        {validTab !== 'piece' && open && (
+          <div className="absolute left-0 right-0 bottom-0 z-40">
+            <div
+              className={`h-[230px] px-2 pt-2 pb-2 ${
+                validTab === 'hand' ? '' : 'rounded-t-xl border-t border-background-200 bg-background-100/95 backdrop-blur'
+              }`}
+            >
+              {overlayContent}
+            </div>
+          </div>
+        )}
       </section>
 
       {/* 底部抽屉 */}
@@ -472,10 +493,42 @@ export default function MobileBattleView({
           ) : null}
         </div>
 
-        <div className={`overflow-hidden transition-all duration-300 ease-out ${open ? 'max-h-[44vh]' : 'max-h-0'}`}>
-          <div className="h-[34vh] px-2 pb-2">{content}</div>
+        <div
+          className="overflow-hidden transition-[height] duration-300 ease-out"
+          style={{ height: open && validTab === 'piece' ? 230 : 0 }}
+        >
+          <div className="h-full px-2 pb-2">{drawerContent}</div>
         </div>
       </div>
+
+      {/* 卡牌详情:屏幕中央,点击使用 / 点击空白取消 */}
+      {selectedCardId && CARDS_BY_ID[selectedCardId] && (
+        <CardCenterOverlay
+          card={CARDS_BY_ID[selectedCardId]}
+          onPlay={() => {
+            const id = selectedCardId;
+            setSelectedCardId(null);
+            onPlayCard(id);
+          }}
+          onCancel={() => setSelectedCardId(null)}
+        />
+      )}
+
+      {/* 卡牌目标选择提示 */}
+      {pendingHint && (
+        <div className="absolute top-12 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2">
+          <span className="font-label text-[11px] px-3 py-1.5 rounded-full bg-background-950/80 text-background-50 border border-primary-500/50 whitespace-nowrap">
+            {pendingHint}
+            {pendingNeed > 1 && ` ${pendingCount}/${pendingNeed}`}
+          </span>
+          <button
+            onClick={onCancelCard}
+            className="font-label text-[11px] px-2.5 py-1.5 rounded-full bg-secondary-500/90 text-background-50 cursor-pointer whitespace-nowrap"
+          >
+            取消
+          </button>
+        </div>
+      )}
     </div>
   );
 }

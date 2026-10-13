@@ -1,22 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useBattle } from '@/pages/play/hooks/useBattle';
 import { visibleKeys, legalMoves, at } from '@/game/engine';
 import { key, inBounds, LINEUP_SIZE } from '@/game/constants';
 import { CARDS_BY_ID } from '@/game/cards';
 import type { Team, AutoCommandStyle } from '@/game/types';
-import BattleBoard from '@/pages/play/components/BattleBoard';
-import TurnHeader from '@/pages/play/components/TurnHeader';
-import HandPanel from '@/pages/play/components/HandPanel';
-import SummonDeckModal from '@/pages/play/components/SummonDeckModal';
-import DeployRosterPanel from '@/pages/play/components/DeployRosterPanel';
-import BattleLog from '@/pages/play/components/BattleLog';
+import MobileBattleView from '@/pages/play/components/MobileBattleView';
 import ResultOverlay from '@/pages/play/components/ResultOverlay';
-import PieceInfoPanel from '@/pages/play/components/PieceInfoPanel';
+import SummonDeckModal from '@/pages/play/components/SummonDeckModal';
 import DrawReveal from '@/pages/play/components/DrawReveal';
 import EnemyDeckModal from '@/pages/play/components/EnemyDeckModal';
-import MobileBattleView from '@/pages/play/components/MobileBattleView';
 import PhaseTransitionOverlay from '@/pages/play/components/PhaseTransitionOverlay';
 
 interface Pending {
@@ -25,31 +19,19 @@ interface Pending {
   cell: { x: number; y: number } | null;
 }
 
-export default function BattlePage({ forceView: forceViewProp }: { forceView?: 'desktop' | 'mobile' }) {
+export default function BattlePage() {
   const navigate = useNavigate();
   const b = useBattle();
   const { state } = b;
-  const [searchParams, setSearchParams] = useSearchParams();
   const [pending, setPending] = useState<Pending | null>(null);
   const [phaseEndNotice, setPhaseEndNotice] = useState(false);
   const [summonOpen, setSummonOpen] = useState(true);
   const [enemyDeckOpen, setEnemyDeckOpen] = useState(false);
   const [drawReveal, setDrawReveal] = useState<string | null>(null);
   const [autoStyle, setAutoStyle] = useState<AutoCommandStyle>('aggressive');
-  const [forceView, setForceView] = useState<'desktop' | 'mobile' | null>(() => {
-    if (forceViewProp) return forceViewProp;
-    const v = searchParams.get('view');
-    return v === 'desktop' || v === 'mobile' ? v : null;
-  });
   const card1SeenRef = useRef(false);
   const noticeTimer = useRef<number | null>(null);
   const prevPhaseRef = useRef(state.phase);
-
-  const toggleView = () => {
-    const next = forceView === 'desktop' ? 'mobile' : 'desktop';
-    setForceView(next);
-    setSearchParams({ view: next }, { replace: true });
-  };
 
   useEffect(() => {
     if (state.phase !== 'card1' && state.phase !== 'card2') setPending(null);
@@ -62,7 +44,6 @@ export default function BattlePage({ forceView: forceViewProp }: { forceView?: '
     if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
   }, []);
 
-  // 进入部署阶段(开局 / 重开后)自动弹出召唤卡牌界面
   useEffect(() => {
     if (prevPhaseRef.current !== state.phase) {
       prevPhaseRef.current = state.phase;
@@ -70,7 +51,6 @@ export default function BattlePage({ forceView: forceViewProp }: { forceView?: '
     }
   }, [state.phase]);
 
-  // 进入抽卡阶段时,播放一次抽卡动画(开局发牌不触发)
   useEffect(() => {
     if (state.phase === 'card1') {
       if (!card1SeenRef.current && state.lastDrawnCardId) {
@@ -105,7 +85,6 @@ export default function BattlePage({ forceView: forceViewProp }: { forceView?: '
   const rangeCells = useMemo(() => {
     const set = new Set<string>();
     if (!selected || !selected.placed) return set;
-    // 指令阶段:己方棋子显示攻击范围
     if (state.phase === 'command' && selected.team === 'player') {
       const r = selected.range;
       for (let dy = -r; dy <= r; dy++) {
@@ -118,7 +97,6 @@ export default function BattlePage({ forceView: forceViewProp }: { forceView?: '
       }
       return set;
     }
-    // 卡牌阶段:敌方棋子显示攻击范围
     if (selected.team !== 'player' && state.phase !== 'card1' && state.phase !== 'card2') return set;
     const r = selected.range;
     for (let dy = -r; dy <= r; dy++) {
@@ -179,7 +157,6 @@ export default function BattlePage({ forceView: forceViewProp }: { forceView?: '
   };
 
   const handleCell = (x: number, y: number) => {
-    // 卡牌指向模式
     if (pending && pendingCard && (state.phase === 'card1' || state.phase === 'card2')) {
       if (pendingCard.target.kind === 'cell') {
         b.playCard(pending.cardId, { pieceIds: [], cell: { x, y } });
@@ -213,8 +190,7 @@ export default function BattlePage({ forceView: forceViewProp }: { forceView?: '
     if (state.phase === 'command' && !b.busy) {
       const sel = state.pieces.find((p) => p.id === state.selectedId);
       const occupant = at(state, x, y);
-      
-      // 选中己方棋子时，点击敌人设置为攻击目标，点击友方设置为治疗目标
+
       if (sel && sel.team === 'player' && sel.alive && sel.placed && !sel.acted) {
         if (occupant && occupant.team === 'enemy' && visible.has(key(x, y))) {
           b.issue(sel.id, { setAttackTarget: occupant.id });
@@ -229,7 +205,7 @@ export default function BattlePage({ forceView: forceViewProp }: { forceView?: '
           return;
         }
       }
-      
+
       if (occupant) {
         if (occupant.team === 'enemy' && !visible.has(key(x, y))) { b.select(null); return; }
         b.select(occupant.id); return;
@@ -247,10 +223,6 @@ export default function BattlePage({ forceView: forceViewProp }: { forceView?: '
     }
   };
 
-  const handleEndPhase = () => {
-    b.advance();
-  };
-
   const handlePhaseTimeout = () => {
     setPhaseEndNotice(true);
     if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
@@ -258,7 +230,6 @@ export default function BattlePage({ forceView: forceViewProp }: { forceView?: '
     noticeTimer.current = window.setTimeout(() => {
       setPhaseEndNotice(false);
       noticeTimer.current = null;
-      // 部署阶段超时:自动补足阵容、随机布阵并直接出战
       if (phase === 'deploy') {
         if (state.lineup.length < LINEUP_SIZE) b.randomLineup();
         b.randomize();
@@ -270,117 +241,10 @@ export default function BattlePage({ forceView: forceViewProp }: { forceView?: '
     }, 1500);
   };
 
-  const canCommand =
-    state.phase === 'command' && !!selected && selected.team === 'player' && selected.placed && selected.alive;
-
-  const infoPanel = null;
-
   const paused = (state.phase === 'deploy' && summonOpen) || (state.phase === 'command' && enemyDeckOpen);
 
   return (
     <>
-    <div className={`h-screen overflow-hidden flex-col bg-background-50 text-foreground-900 ${forceView === 'mobile' ? 'hidden' : 'flex'}`}>
-      <header className="shrink-0 z-40 bg-background-50/90 backdrop-blur-md border-b border-background-200/60">
-        <div className="w-full px-6 md:px-10 h-16 flex items-center justify-between">
-          <button
-            onClick={() => navigate('/')}
-            className="flex items-center gap-2 text-sm text-foreground-700 hover:text-primary-300 cursor-pointer whitespace-nowrap"
-          >
-            <i className="ri-arrow-left-line w-4 h-4 flex items-center justify-center"></i>
-            返回大厅
-          </button>
-          <div className="font-heading text-base text-foreground-950">灵契终焉 · 单人演练</div>
-          <div className="hidden sm:flex items-center gap-2 font-label text-[10px] text-secondary-300">
-            <span className="w-2 h-2 rounded-full bg-secondary-400 flicker"></span>
-            AI 对手
-          </div>
-          <button
-            onClick={toggleView}
-            className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-label border border-primary-500/40 text-primary-300 hover:bg-primary-500/10 cursor-pointer whitespace-nowrap"
-          >
-            <i className={`${forceView === 'mobile' ? 'ri-computer-line' : 'ri-smartphone-line'} w-4 h-4 flex items-center justify-center`}></i>
-            {forceView === 'mobile' ? '桌面端' : '移动端'}
-          </button>
-        </div>
-      </header>
-
-      <main className="w-full flex-1 min-h-0 px-4 md:px-6 py-3 md:py-4">
-        <div className="flex gap-3 md:gap-4 h-full min-h-0">
-          {/* 左侧 · 战斗日志竖栏:阶段栏与手牌 / 棋子框统一收在右侧 */}
-          <aside className="relative w-52 md:w-72 xl:w-80 shrink-0 h-full min-h-0">
-            <div className="absolute inset-0">
-              <BattleLog log={state.log} />
-            </div>
-
-            {/* 棋子信息 / 指令面板:浮在战斗日志之上,固定在左下角 */}
-            {infoPanel && (
-              <div className="absolute left-2 right-2 bottom-2 z-30 max-h-[calc(100%-1rem)] overflow-y-auto rounded-lg">
-                {infoPanel}
-              </div>
-            )}
-          </aside>
-
-          {/* 棋盘主区域:棋盘吃满整列高度,阶段栏与手牌 / 棋子框统一收在右侧 */}
-          <div className="flex-1 min-w-0 min-h-0 flex gap-3">
-            <section className="relative flex-1 min-w-0 min-h-0">
-              <BattleBoard
-                state={state}
-                visible={visible}
-                selectedId={state.selectedId}
-                moveCells={moveCells}
-                rangeCells={rangeCells}
-                targetPieceIds={targetPieceIds}
-                events={b.events}
-                onCellClick={handleCell}
-              />
-
-
-            </section>
-
-            {/* 右侧 · 阶段栏(上)+ 手牌 / 棋子框(下) */}
-            <div className="w-80 xl:w-96 shrink-0 min-h-0 flex flex-col gap-3">
-              <TurnHeader
-                state={state}
-                busy={b.busy}
-                speed={b.speed}
-                paused={(state.phase === 'deploy' && summonOpen) || (state.phase === 'command' && enemyDeckOpen)}
-                onTimeout={handlePhaseTimeout}
-                onEnd={handleEndPhase}
-                onSkip={b.skipExecution}
-                onToggleSpeed={b.toggleSpeed}
-                onViewEnemyDeck={() => setEnemyDeckOpen(true)}
-                onAutoCommand={() => b.autoCommand(autoStyle)}
-                autoStyle={autoStyle}
-                onAutoStyle={setAutoStyle}
-              />
-
-              {state.phase === 'deploy' ? (
-                <DeployRosterPanel
-                  state={state}
-                  className="flex-1 min-h-0"
-                  onSelect={b.select}
-                  onUnplace={b.unplace}
-                  onMakeLord={b.makeLord}
-                  onRandomize={b.randomize}
-                  onStart={b.start}
-                  onReopenSummon={() => setSummonOpen(true)}
-                />
-              ) : (
-                <HandPanel
-                  state={state}
-                  className="flex-1 min-h-0"
-                  onPlayCard={handlePlayCard}
-                  pendingCardId={pending?.cardId ?? null}
-                  onCancel={() => setPending(null)}
-                />
-              )}
-            </div>
-          </div>
-        </div>
-      </main>
-      </div>
-
-      {forceView !== 'desktop' && (
       <MobileBattleView
         b={b}
         visible={visible}
@@ -400,13 +264,9 @@ export default function BattlePage({ forceView: forceViewProp }: { forceView?: '
         onPhaseTimeout={handlePhaseTimeout}
         onOpenEnemyDeck={() => setEnemyDeckOpen(true)}
         onReopenSummon={() => setSummonOpen(true)}
-        onToggleView={toggleView}
       />
-      )}
 
       <ResultOverlay state={state} onRestart={b.restart} onLobby={() => navigate('/')} />
-
-      {/* 阶段切换过渡动画 */}
       <PhaseTransitionOverlay phase={state.phase} turn={state.turn} />
 
       {drawReveal &&

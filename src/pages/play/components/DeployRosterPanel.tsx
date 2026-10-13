@@ -56,7 +56,7 @@ export default function DeployRosterPanel({
         </div>
 
         <p className="text-[10px] text-foreground-600 leading-relaxed mt-1.5">
-          点击卡牌选中对应灵兽,再点棋盘下半场格子放置;也可一键随机布阵。
+          点击卡牌选中对应灵兽,再点棋盘左半场格子放置;也可一键随机布阵。
         </p>
 
         <div className="flex items-center justify-between mt-2 text-[10px] text-foreground-600">
@@ -103,7 +103,7 @@ export default function DeployRosterPanel({
               }`}
             >
               <div className={`w-9 h-9 shrink-0 flex items-center justify-center rounded-md border ${st.border} ${st.bg} ${st.text}`}>
-                <i className={`${card?.icon ?? def.icon} text-lg w-5 h-5 flex items-center justify-center`}></i>
+                <i className={`${def.icon} text-lg w-5 h-5 flex items-center justify-center`}></i>
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
