@@ -172,7 +172,7 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
         className={`absolute inset-0 overflow-hidden rounded-lg border border-background-300/60 bg-background-200/40 cursor-grab ${
           dragging ? 'cursor-grabbing' : ''
         }`}
-        style={{ zIndex: 1 }}
+        style={{ zIndex: 1, touchAction: 'none' }}
       >
         <div
           ref={contentRef}
