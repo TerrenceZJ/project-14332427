@@ -91,6 +91,8 @@ export default function MobileBattleView({
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const boardRef = useRef<BattleBoardHandle>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const [overlayH, setOverlayH] = useState(0);
 
   const isDeploy = state.phase === 'deploy';
   const isCommand = state.phase === 'command';
@@ -214,6 +216,25 @@ export default function MobileBattleView({
   // 阶段切换后,若当前标签已不属于本阶段(例如离开指令阶段后仍停在「指令」),回退到「手牌」
   const validTab: Tab = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
 
+  // 底部弹出面板(手牌 / 指令 / 日志)遮挡棋盘的高度,用于让棋盘可向上平移
+  const overlayOpen = validTab !== 'piece' && open;
+  const isCmdPiece = validTab === 'cmd' && !!commandPiece;
+
+  // 实测弹出面板高度,作为棋盘可向上平移的余量(面板展开后内容完整展示,不再需要内部滚动)
+  useEffect(() => {
+    if (!overlayOpen) {
+      setOverlayH(0);
+      return;
+    }
+    const el = overlayRef.current;
+    if (!el) return;
+    const update = () => setOverlayH(el.offsetHeight);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [overlayOpen, validTab, isCmdPiece]);
+
 
   const pickTab = (t: Tab) => {
     if (tab === t && open) {
@@ -246,7 +267,7 @@ export default function MobileBattleView({
     }
     if (validTab === 'cmd') {
       return (
-        <div className="h-full min-h-0 flex flex-col gap-2 overflow-y-auto">
+        <div className={`flex flex-col gap-2 ${commandPiece ? '' : 'h-full min-h-0 overflow-y-auto'}`}>
           {commandPiece ? (
             <PieceInfoPanel
               piece={commandPiece}
@@ -383,13 +404,15 @@ export default function MobileBattleView({
           onCellClick={onCell}
           ref={boardRef}
           onZoomChange={setZoomLevel}
+          bottomOverlay={overlayH}
         />
 
         {/* 弹出窗口覆盖层:手牌 / 指令 / 日志 */}
         {validTab !== 'piece' && open && (
           <div className="absolute left-0 right-0 bottom-0 z-40">
             <div
-              className={`h-[230px] px-2 pt-2 pb-2 ${
+              ref={overlayRef}
+              className={`${validTab === 'log' ? 'h-[33vh]' : isCmdPiece ? '' : 'h-[230px]'} px-2 pt-2 pb-2 ${
                 validTab === 'hand' ? '' : 'rounded-t-xl border-t border-background-200 bg-background-100/95 backdrop-blur'
               }`}
             >

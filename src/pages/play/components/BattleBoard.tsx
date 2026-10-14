@@ -22,10 +22,12 @@ interface Props {
   events: TurnEvent[];
   onCellClick: (x: number, y: number) => void;
   onZoomChange?: (zoom: number) => void;
+  /** 底部被面板遮挡的高度(px),让棋盘可额外向上平移,露出被挡住的下方区域 */
+  bottomOverlay?: number;
 }
 
 const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
-  { state, visible, selectedId, moveCells, rangeCells, targetPieceIds, events, onCellClick, onZoomChange }: Props,
+  { state, visible, selectedId, moveCells, rangeCells, targetPieceIds, events, onCellClick, onZoomChange, bottomOverlay = 0 }: Props,
   ref,
 ) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -35,39 +37,97 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
   const CELL_PCT_Y = 100 / ROWS;
 
   const [vp, setVp] = useState({ w: 0, h: 0 });
-  const [offset, setOffset] = useState(0);
+  const [scale, setScaleState] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
 
-  const offsetRef = useRef(0);
-  const dragRef = useRef({ active: false, moved: false, startX: 0, originX: 0 });
+  const vpRef = useRef({ w: 0, h: 0 });
+  const scaleRef = useRef(1);
+  const offsetRef = useRef({ x: 0, y: 0 });
+  const bottomOverlayRef = useRef(bottomOverlay);
+  const dragRef = useRef({ active: false, moved: false, startX: 0, startY: 0, originX: 0, originY: 0 });
   const suppressClickRef = useRef(false);
 
+  const MIN_SCALE = 1;
+  const MAX_SCALE = 2.5;
+
   // 棋盘高度铺满视口,宽度按 10:8 比例推导,保证格子为正方形
-  const boardH = vp.h;
+  const boardH = vp.h * scale;
   const boardW = boardH * (COLS / ROWS);
-  const maxPan = Math.max(0, boardW - vp.w);
 
-  const clampOffset = (o: number) => Math.min(0, Math.max(-maxPan, o));
+  const computeMaxPan = () => {
+    const boardHNow = vpRef.current.h * scaleRef.current;
+    const boardWNow = boardHNow * (COLS / ROWS);
+    return {
+      x: Math.max(0, boardWNow - vpRef.current.w),
+      y: Math.max(0, boardHNow - vpRef.current.h) + bottomOverlayRef.current,
+    };
+  };
 
-  const updateOffset = (o: number) => {
-    const c = clampOffset(o);
+  const clampOffset = (x: number, y: number) => {
+    const m = computeMaxPan();
+    return {
+      x: Math.min(0, Math.max(-m.x, x)),
+      y: Math.min(0, Math.max(-m.y, y)),
+    };
+  };
+
+  const updateOffset = (x: number, y: number) => {
+    const c = clampOffset(x, y);
     offsetRef.current = c;
     setOffset(c);
   };
 
-  const resetView = () => updateOffset(0);
+  const resetView = () => {
+    scaleRef.current = MIN_SCALE;
+    setScaleState(MIN_SCALE);
+    offsetRef.current = { x: 0, y: 0 };
+    setOffset({ x: 0, y: 0 });
+    onZoomChange?.(MIN_SCALE);
+  };
+
+  const applyScale = (next: number) => {
+    const clamped = Math.min(MAX_SCALE, Math.max(MIN_SCALE, next));
+    if (clamped === scaleRef.current) return;
+    const { w, h } = vpRef.current;
+    const prevBoardH = h * scaleRef.current;
+    const prevBoardW = prevBoardH * (COLS / ROWS);
+    const nextBoardH = h * clamped;
+    const nextBoardW = nextBoardH * (COLS / ROWS);
+    // 以视口中心为锚点缩放,保持画面中心不变
+    const cx = w / 2 - offsetRef.current.x;
+    const cy = h / 2 - offsetRef.current.y;
+    const nx = prevBoardW > 0 ? w / 2 - (cx * nextBoardW) / prevBoardW : 0;
+    const ny = prevBoardH > 0 ? h / 2 - (cy * nextBoardH) / prevBoardH : 0;
+    scaleRef.current = clamped;
+    setScaleState(clamped);
+    updateOffset(nx, ny);
+    onZoomChange?.(clamped);
+  };
+
+  const zoomIn = () => applyScale(scaleRef.current + 0.25);
+  const zoomOut = () => applyScale(scaleRef.current - 0.25);
 
   useImperativeHandle(ref, () => ({
-    zoomIn: () => {},
-    zoomOut: () => {},
+    zoomIn,
+    zoomOut,
     resetView,
   }), []);
+
+  useEffect(() => {
+    bottomOverlayRef.current = bottomOverlay;
+    const c = clampOffset(offsetRef.current.x, offsetRef.current.y);
+    offsetRef.current = c;
+    setOffset(c);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bottomOverlay]);
 
   useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
     const measure = () => {
       const r = el.getBoundingClientRect();
+      vpRef.current = { w: r.width, h: r.height };
       setVp({ w: r.width, h: r.height });
     };
     measure();
@@ -81,8 +141,8 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const dragAmount = e.deltaX !== 0 ? e.deltaX : e.deltaY;
-      updateOffset(offsetRef.current - dragAmount * 0.6);
+      const cur = offsetRef.current;
+      updateOffset(cur.x - e.deltaX * 0.6, cur.y - e.deltaY * 0.6);
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
@@ -95,7 +155,9 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
       active: true,
       moved: false,
       startX: e.clientX,
-      originX: offsetRef.current,
+      startY: e.clientY,
+      originX: offsetRef.current.x,
+      originY: offsetRef.current.y,
     };
     e.currentTarget.setPointerCapture(e.pointerId);
     setDragging(true);
@@ -105,8 +167,9 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
     const d = dragRef.current;
     if (!d.active) return;
     const dx = e.clientX - d.startX;
-    if (Math.abs(dx) > 4) d.moved = true;
-    updateOffset(d.originX + dx);
+    const dy = e.clientY - d.startY;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) d.moved = true;
+    updateOffset(d.originX + dx, d.originY + dy);
   };
 
   const endDrag = (e?: React.PointerEvent<HTMLDivElement>) => {
@@ -126,8 +189,8 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
     const rect = el.getBoundingClientRect();
     const vpRect = viewportRef.current?.getBoundingClientRect();
     if (!vpRect) return;
-    const relX = e.clientX - vpRect.left - offsetRef.current;
-    const relY = e.clientY - vpRect.top;
+    const relX = e.clientX - vpRect.left - offsetRef.current.x;
+    const relY = e.clientY - vpRect.top - offsetRef.current.y;
     const x = Math.floor((relX / rect.width) * COLS);
     const y = Math.floor((relY / rect.height) * ROWS);
     if (x >= 0 && y >= 0 && x < COLS && y < ROWS) onCellClick(x, y);
@@ -176,10 +239,12 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
       >
         <div
           ref={contentRef}
-          className="absolute top-0 bottom-0"
+          className="absolute"
           style={{
             width: boardW > 0 ? `${boardW}px` : '100%',
-            left: `${offset}px`,
+            height: boardH > 0 ? `${boardH}px` : '100%',
+            left: `${offset.x}px`,
+            top: `${offset.y}px`,
           }}
         >
           {/* 网格层 */}

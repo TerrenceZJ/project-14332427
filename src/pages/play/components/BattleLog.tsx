@@ -239,7 +239,7 @@ export default function BattleLog({ log }: { log: LogEntry[] }) {
       </div>
 
       <div
-        className="space-y-1.5 flex-1 overflow-y-auto pr-1"
+        className="space-y-1.5 flex-1 min-w-0 overflow-y-auto overflow-x-hidden pr-1"
         ref={logRef}
         onScroll={() => {
           setTip(null);
@@ -256,7 +256,7 @@ export default function BattleLog({ log }: { log: LogEntry[] }) {
         {items.map((l) => (
           <div
             key={l.id}
-            className={`text-xs leading-relaxed px-1.5 -mx-1.5 ${lineTone(l)} ${l.id === flashId ? 'log-new' : ''}`}
+            className={`text-xs leading-relaxed break-words px-1.5 -mx-1.5 ${lineTone(l)} ${l.id === flashId ? 'log-new' : ''}`}
           >
             <LogLine l={l} onCard={handleCard} />
           </div>
