@@ -31,10 +31,11 @@ export default function BattlePage() {
   const [autoStyle, setAutoStyle] = useState<AutoCommandStyle>('aggressive');
   const card1SeenRef = useRef(false);
   const noticeTimer = useRef<number | null>(null);
+  const drawRevealTimer = useRef<number | null>(null);
   const prevPhaseRef = useRef(state.phase);
 
   useEffect(() => {
-    if (state.phase !== 'card1' && state.phase !== 'card2') setPending(null);
+    if (state.phase !== 'card1') setPending(null);
     setPhaseEndNotice(false);
     if (state.phase !== 'command') setEnemyDeckOpen(false);
     if (noticeTimer.current) { window.clearTimeout(noticeTimer.current); noticeTimer.current = null; }
@@ -42,6 +43,7 @@ export default function BattlePage() {
 
   useEffect(() => () => {
     if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
+    if (drawRevealTimer.current) window.clearTimeout(drawRevealTimer.current);
   }, []);
 
   useEffect(() => {
@@ -55,10 +57,18 @@ export default function BattlePage() {
     if (state.phase === 'card1') {
       if (!card1SeenRef.current && state.lastDrawnCardId) {
         card1SeenRef.current = true;
-        setDrawReveal(state.lastDrawnCardId);
+        const id = state.lastDrawnCardId;
+        drawRevealTimer.current = window.setTimeout(() => {
+          setDrawReveal(id);
+          drawRevealTimer.current = null;
+        }, 1200);
       }
     } else {
       card1SeenRef.current = false;
+      if (drawRevealTimer.current) {
+        window.clearTimeout(drawRevealTimer.current);
+        drawRevealTimer.current = null;
+      }
     }
   }, [state.phase, state.lastDrawnCardId]);
 
@@ -76,7 +86,7 @@ export default function BattlePage() {
       if (selected.team !== 'player' || selected.acted) return new Set<string>();
       return legalMoves(state, selected);
     }
-    if (state.phase === 'card1' || state.phase === 'card2') {
+    if (state.phase === 'card1') {
       return legalMoves(state, selected);
     }
     return new Set<string>();
@@ -97,7 +107,7 @@ export default function BattlePage() {
       }
       return set;
     }
-    if (selected.team !== 'player' && state.phase !== 'card1' && state.phase !== 'card2') return set;
+    if (selected.team !== 'player' && state.phase !== 'card1') return set;
     const r = selected.range;
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
@@ -112,9 +122,13 @@ export default function BattlePage() {
 
   const pendingCard = pending ? CARDS_BY_ID[pending.cardId] : null;
 
+  // 已选中的卡牌目标(选中后以金色边框标记)
+  const selectedTargetIds = useMemo(() => new Set(pending?.pieceIds ?? []), [pending]);
+
+  // 可选目标(蓝色边框提示),同时用于判断点击是否有效
   const targetPieceIds = useMemo(() => {
     const set = new Set<string>();
-    if (!pendingCard || (state.phase !== 'card1' && state.phase !== 'card2')) return set;
+    if (!pendingCard || (state.phase !== 'card1')) return set;
     const kind = pendingCard.target.kind;
     if (kind === 'cell') return set;
 
@@ -157,7 +171,7 @@ export default function BattlePage() {
   };
 
   const handleCell = (x: number, y: number) => {
-    if (pending && pendingCard && (state.phase === 'card1' || state.phase === 'card2')) {
+    if (pending && pendingCard && (state.phase === 'card1')) {
       if (pendingCard.target.kind === 'cell') {
         b.playCard(pending.cardId, { pieceIds: [], cell: { x, y } });
         setPending(null);
@@ -213,7 +227,7 @@ export default function BattlePage() {
       b.select(null);
     }
 
-    if ((state.phase === 'card1' || state.phase === 'card2') && !b.busy) {
+    if ((state.phase === 'card1') && !b.busy) {
       const occupant = at(state, x, y);
       if (occupant) {
         if (occupant.team === 'enemy' && !visible.has(key(x, y))) { b.select(null); return; }
@@ -251,6 +265,7 @@ export default function BattlePage() {
         moveCells={moveCells}
         rangeCells={rangeCells}
         targetPieceIds={targetPieceIds}
+        selectedTargetIds={selectedTargetIds}
         pendingCardId={pending?.cardId ?? null}
         pendingCount={pending?.pieceIds.length ?? 0}
         pendingNeed={pendingCard?.target.count ?? 0}
@@ -300,9 +315,7 @@ export default function BattlePage() {
                 ? '部署阶段'
                 : state.phase === 'command'
                 ? '指令阶段'
-                : state.phase === 'card1'
-                ? '抽卡阶段'
-                : '援救阶段'}{' '}
+                : '抽卡阶段'}{' '}
               结束
             </h2>
             <p className="text-sm text-foreground-700 text-center leading-relaxed">

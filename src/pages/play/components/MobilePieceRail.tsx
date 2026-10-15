@@ -80,7 +80,7 @@ export default function MobilePieceRail({
                 if (consumeClickSuppression()) return;
                 onSelect(sel ? null : p.id);
               }}
-              className={`relative shrink-0 snap-center w-[118px] h-full rounded-lg border p-2.5 flex flex-col items-center text-center transition-all cursor-pointer ${
+              className={`relative shrink-0 snap-center snap-always w-[118px] h-full rounded-lg border p-2.5 flex flex-col items-center text-center transition-all cursor-pointer ${
                 sel
                   ? 'border-primary-500 bg-primary-500/15'
                   : p.placed
@@ -93,13 +93,9 @@ export default function MobilePieceRail({
                 <span className={`font-label text-[10px] px-1.5 py-0.5 rounded border whitespace-nowrap ${st.text} ${st.border} ${st.bg}`}>
                   {st.label}
                 </span>
-                {p.isLord ? (
-                  <i className="ri-vip-crown-fill text-primary-400 w-3.5 h-3.5 flex items-center justify-center"></i>
-                ) : (
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full ${p.placed ? 'bg-primary-400' : 'bg-background-400/70'}`}
-                  ></span>
-                )}
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${p.placed ? 'bg-primary-400' : 'bg-background-400/70'}`}
+                ></span>
               </div>
 
               {/* 图标 */}

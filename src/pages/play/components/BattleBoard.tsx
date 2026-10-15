@@ -19,6 +19,7 @@ interface Props {
   moveCells: Set<string>;
   rangeCells: Set<string>;
   targetPieceIds: Set<string>;
+  selectedTargetIds: Set<string>;
   events: TurnEvent[];
   onCellClick: (x: number, y: number) => void;
   onZoomChange?: (zoom: number) => void;
@@ -27,7 +28,7 @@ interface Props {
 }
 
 const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
-  { state, visible, selectedId, moveCells, rangeCells, targetPieceIds, events, onCellClick, onZoomChange, bottomOverlay = 0 }: Props,
+  { state, visible, selectedId, moveCells, rangeCells, targetPieceIds, selectedTargetIds, events, onCellClick, onZoomChange, bottomOverlay = 0 }: Props,
   ref,
 ) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -204,7 +205,7 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
   const shownPieces = state.pieces.filter(
     (p) => p.alive && p.placed && (p.team === 'player' || visible.has(key(p.x, p.y)))
   );
-  const pendingMoves = (state.phase === 'command' || state.phase === 'card2')
+  const pendingMoves = (state.phase === 'command')
     ? state.pieces.filter((p) => p.team === 'player' && p.alive && p.placed && p.path.length > 0)
     : [];
 
@@ -381,7 +382,8 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
               revealLord={p.team === 'player' || p.lordRevealed}
               selected={p.id === selectedId}
               targetable={targetPieceIds.has(p.id)}
-              faded={(state.phase === 'command' || state.phase === 'card2') && p.team === 'player' && p.path.length > 0}
+              targeted={selectedTargetIds.has(p.id)}
+              faded={(state.phase === 'command') && p.team === 'player' && p.path.length > 0}
               showHpBar={false}
             />
           ))}

@@ -108,7 +108,6 @@ export default function DeployRosterPanel({
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="font-heading text-[13px] text-foreground-950 truncate">{card?.name ?? def.name}</span>
-                  {p.isLord && <i className="ri-vip-crown-fill text-primary-400 w-3 h-3 flex items-center justify-center"></i>}
                 </div>
                 <div className="text-[10px] text-foreground-600 truncate">
                   {st.label}卡 · 召唤 {def.name} · HP {p.hp}

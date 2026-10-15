@@ -142,7 +142,7 @@ export default function EnemyDeckModal({ onClose }: Props) {
               return (
                 <div
                   key={c.id}
-                  className={`shrink-0 snap-center w-[72%] max-w-[240px] sm:w-[46%] md:w-[31%] lg:w-[23%] xl:w-[18.5%] transition-transform duration-300 ${
+                  className={`shrink-0 snap-center snap-always w-[72%] max-w-[240px] sm:w-[46%] md:w-[31%] lg:w-[23%] xl:w-[18.5%] transition-transform duration-300 ${
                     activeIdx === idx ? 'scale-[1.03]' : 'scale-100'
                   }`}
                 >

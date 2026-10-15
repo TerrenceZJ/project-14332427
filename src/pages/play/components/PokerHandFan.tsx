@@ -15,7 +15,7 @@ const tone = (c: CardCategory) =>
 
 /** 扑克牌式扇形手牌:从底部中心向两侧甩开,点击一张进入详情 */
 export default function PokerHandFan({ state, onSelectCard }: Props) {
-  const canPlay = state.phase === 'card1' || state.phase === 'card2';
+  const canPlay = state.phase === 'card1';
   const cards = state.hand.map((id) => CARDS_BY_ID[id]).filter(Boolean);
   const n = cards.length;
   const center = (n - 1) / 2;

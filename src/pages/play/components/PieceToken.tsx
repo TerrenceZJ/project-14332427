@@ -8,6 +8,7 @@ interface Props {
   revealLord: boolean;
   selected?: boolean;
   targetable?: boolean;
+  targeted?: boolean;
   faded?: boolean;
   /** 精简模式(小地图):只显示棋子圆点图标,省略血条与状态标记 */
   minimal?: boolean;
@@ -15,7 +16,7 @@ interface Props {
   showHpBar?: boolean;
 }
 
-export default function PieceToken({ piece, revealLord, selected, targetable, faded, minimal, showHpBar = true }: Props) {
+export default function PieceToken({ piece, revealLord, selected, targetable, targeted, faded, minimal, showHpBar = true }: Props) {
   const def = BEASTS[piece.type];
   const isPlayer = piece.team === 'player';
 
@@ -146,14 +147,14 @@ export default function PieceToken({ piece, revealLord, selected, targetable, fa
 
           <div
             className={`relative w-[86%] h-[86%] rounded-full border flex items-center justify-center ${base} ${
-              selected ? 'ring-2 ring-primary-400 ring-offset-1 ring-offset-background-50' : targetable ? 'ring-2 ring-accent-300 ring-offset-1 ring-offset-background-50' : ''
+              selected || targeted ? 'ring-2 ring-primary-400 ring-offset-1 ring-offset-background-50' : targetable ? 'ring-2 ring-accent-300 ring-offset-1 ring-offset-background-50' : ''
             }`}
           >
             <i className={`${def.icon} text-xl w-5 h-5 flex items-center justify-center`}></i>
 
             {revealLord && piece.isLord && (
-              <span className="absolute -top-[45%] left-1/2 -translate-x-1/2 text-primary-300">
-                <i className="ri-vip-crown-fill w-3 h-3 flex items-center justify-center text-[min(2vw,11px)]"></i>
+              <span className="absolute top-[3%] left-[3%] w-[28%] h-[28%] min-w-[13px] min-h-[13px] flex items-center justify-center rounded-full bg-primary-500 text-background-50 border border-primary-200 text-[min(2.6vw,11px)] leading-none font-semibold pointer-events-none">
+                主
               </span>
             )}
 
@@ -162,7 +163,7 @@ export default function PieceToken({ piece, revealLord, selected, targetable, fa
             )}
 
             {piece.stunned > 0 && (
-              <span className="absolute -top-[32%] -left-[8%] text-secondary-300">
+              <span className="absolute left-[6%] bottom-[6%] text-secondary-300">
                 <i className="ri-lock-2-fill w-3 h-3 flex items-center justify-center text-[min(2vw,11px)]"></i>
               </span>
             )}
@@ -187,24 +188,20 @@ export default function PieceToken({ piece, revealLord, selected, targetable, fa
                 <i className="ri-radar-line w-3 h-3 flex items-center justify-center text-[min(2vw,10px)]"></i>
               </span>
             )}
-
-            {piece.isLord && !piece.lordRevealed && isPlayer && (
-              <span className="absolute -top-[30%] -right-[10%] w-[38%] h-[38%] rounded-full bg-primary-500 border border-primary-200"></span>
-            )}
           </div>
 
           {/* HP 刻度条 + 剩余血量数字 */}
           {showHpBar && (
             <div className="absolute -bottom-[14%] left-1/2 -translate-x-1/2 flex items-center gap-1">
-              <div className="flex items-center gap-[1.5px]">
+              <div className="flex items-center gap-[2px]">
                 {Array.from({ length: piece.maxHp }).map((_, i) => (
                   <div
                     key={i}
-                    className={`w-[3px] h-[6px] rounded-[1px] ${i < piece.hp ? 'bg-green-400' : 'bg-background-300/70'}`}
+                    className={`w-[4px] h-[8px] rounded-[1px] ${i < piece.hp ? 'bg-green-400' : 'bg-background-300/70'}`}
                   ></div>
                 ))}
               </div>
-              <span className="font-heading text-[9px] leading-none text-foreground-950">{piece.hp}</span>
+              <span className="font-heading text-[10px] leading-none text-foreground-950">{piece.hp}</span>
             </div>
           )}
         </div>

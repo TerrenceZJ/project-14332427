@@ -37,7 +37,7 @@ export default function HandPanel({
   onCancel,
   orientation = 'vertical',
 }: Props) {
-  const canPlay = state.phase === 'card1' || state.phase === 'card2';
+  const canPlay = state.phase === 'card1';
   const horizontal = orientation === 'horizontal';
   const pendingCard = pendingCardId ? CARDS_BY_ID[pendingCardId] : null;
   const pendingActive = !!pendingCard && canPlay;
@@ -218,7 +218,7 @@ export default function HandPanel({
                     if (consumeClickSuppression()) return;
                     if (usable) onPlayCard(id);
                   }}
-                  className={`relative shrink-0 snap-center w-[150px] rounded-lg border p-2.5 flex flex-col text-left transition-all ${
+                  className={`relative shrink-0 snap-center snap-always w-[150px] rounded-lg border p-2.5 flex flex-col text-left transition-all ${
                     usable ? 'cursor-pointer' : 'cursor-not-allowed'
                   } ${
                     isNew

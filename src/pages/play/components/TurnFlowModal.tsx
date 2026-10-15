@@ -35,13 +35,6 @@ const phases: Phase[] = [
   },
   {
     n: '4',
-    icon: 'ri-stack-line',
-    name: '援救阶段',
-    time: '40 秒',
-    desc: '指令之后再打一张牌,针对局势即时应变、补强阵容。',
-  },
-  {
-    n: '5',
     icon: 'ri-skip-forward-line',
     name: '同步执行',
     time: '',

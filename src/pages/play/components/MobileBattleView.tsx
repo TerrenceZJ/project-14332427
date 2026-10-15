@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import type { AutoCommandStyle, Piece } from '@/game/types';
 import type { Battle } from '@/pages/play/hooks/useBattle';
 import { LINEUP_SIZE } from '@/game/constants';
-import BattleBoard, { type BattleBoardHandle } from './BattleBoard';
+import BattleBoard from './BattleBoard';
+import BattleStatusBar from './BattleStatusBar';
 import CountdownRingFrame from './CountdownRingFrame';
 import MobilePieceRail from './MobilePieceRail';
 import PieceInfoPanel from './PieceInfoPanel';
@@ -48,6 +49,7 @@ interface Props {
   moveCells: Set<string>;
   rangeCells: Set<string>;
   targetPieceIds: Set<string>;
+  selectedTargetIds: Set<string>;
   pendingCardId: string | null;
   pendingCount: number;
   pendingNeed: number;
@@ -70,6 +72,7 @@ export default function MobileBattleView({
   moveCells,
   rangeCells,
   targetPieceIds,
+  selectedTargetIds,
   pendingCardId,
   pendingCount,
   pendingNeed,
@@ -89,15 +92,13 @@ export default function MobileBattleView({
   const [tab, setTab] = useState<Tab>('hand');
   const [open, setOpen] = useState(false);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
-  const boardRef = useRef<BattleBoardHandle>(null);
-  const [zoomLevel, setZoomLevel] = useState(1);
   const overlayRef = useRef<HTMLDivElement>(null);
   const [overlayH, setOverlayH] = useState(0);
 
   const isDeploy = state.phase === 'deploy';
   const isCommand = state.phase === 'command';
   const isExecute = state.phase === 'execute';
-  const canPlay = state.phase === 'card1' || state.phase === 'card2';
+  const canPlay = state.phase === 'card1';
   const canEnd = canPlay || isCommand;
 
   // 部署阶段无手牌,自动切到棋子页并展开抽屉
@@ -110,7 +111,7 @@ export default function MobileBattleView({
 
   // 进入抽卡 / 援救阶段自动展开手牌
   useEffect(() => {
-    if (state.phase === 'card1' || state.phase === 'card2') {
+    if (state.phase === 'card1') {
       setTab('hand');
       setOpen(true);
     }
@@ -140,17 +141,17 @@ export default function MobileBattleView({
     if (pendingCardId && !prev) {
       setOpen(false);
     } else if (!pendingCardId && prev) {
-      if (state.phase === 'card1' || state.phase === 'card2') {
+      if (state.phase === 'card1') {
         setTab('hand');
         setOpen(true);
       }
     }
   }, [pendingCardId]);
 
-  // 阶段倒计时(部署 60s / 抽卡 120s / 指令 60s / 援救 40s)
+  // 阶段倒计时(部署 60s / 抽卡 120s / 指令 60s)
   const countdown = isDeploy || canPlay || isCommand;
   // 本阶段总时长(用于倒计时进度环的比例)
-  const phaseTotal = isDeploy ? 60 : state.phase === 'card1' ? 120 : isCommand ? 60 : 40;
+  const phaseTotal = isDeploy ? 60 : state.phase === 'card1' ? 120 : 60;
   const [count, setCount] = useState(60);
   useEffect(() => {
     setCount(phaseTotal);
@@ -196,6 +197,11 @@ export default function MobileBattleView({
   // 指令阶段:是否还有已规划的路径(决定清除 / 撤销按钮是否可用)
   const hasPlannedPaths = state.pieces.some(
     (p) => p.team === 'player' && p.placed && p.alive && !p.acted && p.path.length > 0,
+  );
+  // 是否还有未确认的草稿指令(路径 / 目标 / 防御姿态)
+  const hasDraftCommands = state.pieces.some(
+    (p) => p.team === 'player' && p.placed && p.alive && !p.acted &&
+      (p.path.length > 0 || p.attackTarget !== undefined || p.healTarget !== undefined || p.mode === 'defend'),
   );
 
   // 指令阶段选中的己方棋子
@@ -304,6 +310,14 @@ export default function MobileBattleView({
             <i className="ri-magic-line w-3.5 h-3.5 flex items-center justify-center"></i>
             一键自动指令
           </button>
+          <button
+            onClick={() => b.confirmAll()}
+            disabled={b.busy || !hasDraftCommands}
+            className="w-full flex items-center justify-center gap-1.5 px-2 py-2 rounded-md font-label text-xs bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+          >
+            <i className="ri-check-line w-3.5 h-3.5 flex items-center justify-center"></i>
+            确认指令
+          </button>
           <div className="flex items-center gap-1.5">
             <button
               onClick={() => b.undoLastStep()}
@@ -346,48 +360,25 @@ export default function MobileBattleView({
       className="lg:hidden fixed inset-0 z-20 flex flex-col bg-background-50 text-foreground-900"
       style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
-      {/* 顶栏:返回 + 阶段 + 倒计时 */}
-      <header className="shrink-0 h-10 px-2 flex items-center gap-1 border-b border-background-200/60 bg-background-50/95 backdrop-blur">
+      {/* 顶栏:返回 + 阶段 + 战况信息 + 倒计时 */}
+      <header className="shrink-0 h-10 px-2 flex items-center gap-1.5 border-b border-background-200/60 bg-background-50/95 backdrop-blur">
         <button
           onClick={() => navigate('/')}
           aria-label="返回大厅"
-          className="w-8 h-8 flex items-center justify-center rounded-md text-foreground-700 hover:text-primary-300 cursor-pointer"
+          className="w-8 h-8 shrink-0 flex items-center justify-center rounded-md text-foreground-700 hover:text-primary-300 cursor-pointer"
         >
           <i className="ri-arrow-left-line text-base w-4 h-4 flex items-center justify-center"></i>
         </button>
-        <div className="flex-1 min-w-0 text-center">
-          <div className="font-heading text-xs text-foreground-950 truncate">{phaseLabel[state.phase]}</div>
-        </div>
-        {/* 视角缩放:从棋盘里移出来放到顶栏,避免遮挡棋子导致无法操作 */}
-        <div className="shrink-0 flex items-center gap-0.5 rounded-full border border-background-300/60 bg-background-100/85 p-0.5">
-          <button
-            onClick={() => boardRef.current?.zoomOut()}
-            aria-label="缩小棋盘"
-            className="w-5 h-5 flex items-center justify-center rounded-full text-foreground-600 hover:text-primary-300 cursor-pointer"
-          >
-            <i className="ri-subtract-line text-xs w-3 h-3 flex items-center justify-center"></i>
-          </button>
-          <button
-            onClick={() => boardRef.current?.resetView()}
-            aria-label="重置视角"
-            className="min-w-6 h-5 px-0.5 flex items-center justify-center rounded-full font-label text-[8px] text-foreground-600 hover:text-primary-300 cursor-pointer tabular-nums"
-          >
-            {Math.round(zoomLevel * 100)}%
-          </button>
-          <button
-            onClick={() => boardRef.current?.zoomIn()}
-            aria-label="放大棋盘"
-            className="w-5 h-5 flex items-center justify-center rounded-full text-foreground-600 hover:text-primary-300 cursor-pointer"
-          >
-            <i className="ri-add-line text-xs w-3 h-3 flex items-center justify-center"></i>
-          </button>
+        <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-hidden">
+          <span className="font-heading text-xs text-foreground-950 whitespace-nowrap shrink-0">{phaseLabel[state.phase]}</span>
+          <BattleStatusBar state={state} />
         </div>
         {countdown ? (
-          <span className={`font-heading text-xs tabular-nums ${count <= 10 ? 'text-secondary-400' : 'text-foreground-900'}`}>
+          <span className={`shrink-0 font-heading text-xs tabular-nums ${count <= 10 ? 'text-secondary-400' : 'text-foreground-900'}`}>
             {mm}:{ss}
           </span>
         ) : (
-          <span className="w-8"></span>
+          <span className="w-8 shrink-0"></span>
         )}
       </header>
 
@@ -400,10 +391,9 @@ export default function MobileBattleView({
           moveCells={moveCells}
           rangeCells={rangeCells}
           targetPieceIds={targetPieceIds}
+          selectedTargetIds={selectedTargetIds}
           events={b.events}
           onCellClick={onCell}
-          ref={boardRef}
-          onZoomChange={setZoomLevel}
           bottomOverlay={overlayH}
         />
 

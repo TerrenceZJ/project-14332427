@@ -749,13 +749,14 @@ export function autoCommand(state: GameState, style: AutoCommandStyle = 'aggress
   const allies = s.pieces.filter((p) => p.team === 'player' && p.alive && p.placed && p.stunned <= 0);
   const enemies = s.pieces.filter((p) => p.team === 'enemy' && p.alive && p.placed && vis.has(key(p.x, p.y)));
 
-  let ap = s.ap;
+  // 草稿模式:只规划路径 / 目标,不扣行动点、不锁定,待玩家确认后统一生效
+  let budget = s.ap;
   for (const a of allies) {
     if (a.acted || a.mode === 'defend') continue;
-    if (ap < 1) continue;
+    if (budget < 1) continue;
 
-    ap -= 1;
-    const budget = a.move + a.bonusMove;
+    budget -= 1;
+    const moveBudget = a.move + a.bonusMove;
 
     // 选取目标:不同风格有不同的偏好
     let best: Piece | null = null;
@@ -771,40 +772,53 @@ export function autoCommand(state: GameState, style: AutoCommandStyle = 'aggress
 
     if (style === 'defensive') {
       const inRange = best ? dist(a.x, a.y, best.x, best.y) <= a.range : false;
-      const canReach = best ? dist(a.x, a.y, best.x, best.y) <= budget + a.range : false;
+      const canReach = best ? dist(a.x, a.y, best.x, best.y) <= moveBudget + a.range : false;
       if (inRange) {
         a.path = [];
         a.mode = 'attack';
         if (best) a.attackTarget = best.id;
       } else if (canReach) {
-        a.path = planPath(a, best!, s, budget);
+        a.path = planPath(a, best!, s, moveBudget);
         a.mode = 'attack';
         if (best) a.attackTarget = best.id;
       } else {
-        a.path = planPath(a, { x: 0, y: a.y }, s, budget);
+        a.path = planPath(a, { x: 0, y: a.y }, s, moveBudget);
         a.mode = 'defend';
         a.attackTarget = undefined;
       }
-      a.acted = true;
       continue;
     }
 
     // aggressive / focusLord:主动压上
     if (best) {
       const d = dist(a.x, a.y, best.x, best.y);
-      a.path = d > a.range ? planPath(a, best, s, budget) : [];
+      a.path = d > a.range ? planPath(a, best, s, moveBudget) : [];
       a.attackTarget = best.id;
     } else if (style === 'focusLord') {
-      a.path = planPath(a, { x: COLS - 1, y: Math.floor(ROWS / 2) }, s, budget);
+      a.path = planPath(a, { x: COLS - 1, y: Math.floor(ROWS / 2) }, s, moveBudget);
       a.attackTarget = undefined;
     } else {
-      a.path = planPath(a, { x: COLS - 1, y: a.y }, s, budget);
+      a.path = planPath(a, { x: COLS - 1, y: a.y }, s, moveBudget);
       a.attackTarget = undefined;
     }
     a.mode = 'attack';
-    a.acted = true;
   }
-  s.ap = ap;
+  return s;
+}
+
+/** 指令阶段:一键确认所有未确认的草稿指令(按棋子数扣行动点并锁定) */
+export function confirmAll(state: GameState): GameState {
+  if (state.phase !== 'command') return state;
+  const s = clone(state);
+  for (const p of s.pieces) {
+    if (p.team !== 'player' || !p.alive || !p.placed || p.acted) continue;
+    const hasDraft = p.path.length > 0 || p.attackTarget !== undefined || p.healTarget !== undefined || p.mode === 'defend';
+    if (!hasDraft) continue;
+    const cost = p.mode === 'scout' ? 2 : 1;
+    if (s.ap < cost) continue;
+    s.ap -= cost;
+    p.acted = true;
+  }
   return s;
 }
 
@@ -850,7 +864,7 @@ function legalMoves(s: GameState, p: Piece): Set<string> {
 
 export { legalMoves };
 
-/** 推进阶段:card1 → command(含 AI 下指令)→ card2 */
+/** 推进阶段:card1 → command(含 AI 下指令) */
 export function advancePhase(state: GameState): GameState {
   if (state.phase === 'card1') {
     let s = aiCommand(state);
@@ -858,18 +872,22 @@ export function advancePhase(state: GameState): GameState {
     pushLog(s, '—— 指令阶段 · 为灵兽下达指令 ——', 'player', 'turn');
     return s;
   }
-  if (state.phase === 'command') {
-    const s = clone(state);
-    // 丢弃未确认的草稿移动路径(未点「确认移动」的移动不生效)
-    s.pieces.forEach((p) => {
-      if (p.team === 'player' && !p.acted) p.path = [];
-    });
-    s.phase = 'card2';
-    s.selectedId = null;
-    pushLog(s, '—— 援救阶段 ——', 'player', 'turn');
-    return s;
-  }
   return state;
+}
+
+/** 指令阶段结束:丢弃未确认棋子的草稿指令(路径 / 目标 / 姿态),准备进入同步执行 */
+export function prepareExecute(state: GameState): GameState {
+  const s = clone(state);
+  s.pieces.forEach((p) => {
+    if (p.team === 'player' && !p.acted) {
+      p.path = [];
+      p.attackTarget = undefined;
+      p.healTarget = undefined;
+      p.mode = 'attack';
+    }
+  });
+  s.selectedId = null;
+  return s;
 }
 
 /** 执行本回合指令,拆分为逐帧动画序列,让玩家看清每一步 */

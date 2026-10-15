@@ -2,9 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { GameState, TurnEvent, TurnFrame, Mode, Pt, AutoCommandStyle } from '@/game/types';
 import {
   createGame, placePiece, unplacePiece, setLord, autoDeploy, startBattle,
-  command as cmd, selectPiece, executeTurn, beginNextTurn, advancePhase,
+  command as cmd, selectPiece, executeTurn, beginNextTurn, advancePhase, prepareExecute,
   playCard as playCardEngine, redeployPiece, toggleLineup as toggleLineupEngine,
-  randomLineup as randomLineupEngine, autoCommand as autoCommandEngine,
+  randomLineup as randomLineupEngine, autoCommand as autoCommandEngine, confirmAll as confirmAllEngine,
 } from '@/game/engine';
 
 export interface CardTargets {
@@ -57,17 +57,22 @@ export function useBattle() {
     setState((s) => autoCommandEngine(s, style));
   }, []);
 
-  /** 指令阶段:一键清除所有待行动棋子的规划路径 */
+  /** 指令阶段:一键清除所有未确认棋子的草稿(路径 / 目标 / 姿态) */
   const clearAllPaths = useCallback(() => {
     setState((s) => {
-      let next = s;
-      for (const p of s.pieces) {
-        if (p.team === 'player' && p.placed && p.alive && !p.acted && p.path.length > 0) {
-          next = cmd(next, p.id, { clearPath: true });
+      const pieces = s.pieces.map((p) => {
+        if (p.team === 'player' && p.placed && p.alive && !p.acted) {
+          return { ...p, path: [], attackTarget: undefined, healTarget: undefined, mode: 'attack' as Mode };
         }
-      }
-      return next;
+        return p;
+      });
+      return { ...s, pieces };
     });
+  }, []);
+
+  /** 指令阶段:一键确认所有未确认的草稿指令 */
+  const confirmAll = useCallback(() => {
+    setState((s) => confirmAllEngine(s));
   }, []);
 
   /** 指令阶段:撤销「上一只」棋子的最后一段路径(优先当前选中,其次最后规划的那只) */
@@ -105,14 +110,14 @@ export function useBattle() {
     finishExecution();
   }, [finishExecution]);
 
-  /** 推进阶段:card1 → command → card2 → execute(逐帧动画) */
+  /** 推进阶段:card1 → command → execute(逐帧动画) */
   const advance = useCallback(() => {
     const s = stateRef.current;
     if (busyRef.current) return;
 
-    if (s.phase === 'card2') {
+    if (s.phase === 'command') {
       if (timer.current) window.clearTimeout(timer.current);
-      framesRef.current = executeTurn(s);
+      framesRef.current = executeTurn(prepareExecute(s));
       indexRef.current = 0;
       setBusy(true);
       const play = () => {
@@ -130,7 +135,7 @@ export function useBattle() {
         timer.current = window.setTimeout(play, f.delay * factor);
       };
       play();
-    } else if (s.phase === 'card1' || s.phase === 'command') {
+    } else if (s.phase === 'card1') {
       setState((cur) => advancePhase(cur));
     }
   }, [finishExecution]);
@@ -144,7 +149,7 @@ export function useBattle() {
     setState(createGame());
   }, []);
 
-  return { state, events, busy, speed, place, unplace, makeLord, redeploy, randomize, toggleLineup, randomLineup, select, start, issue, playCard, autoCommand, clearAllPaths, undoLastStep, advance, toggleSpeed, skipExecution, restart };
+  return { state, events, busy, speed, place, unplace, makeLord, redeploy, randomize, toggleLineup, randomLineup, select, start, issue, playCard, autoCommand, confirmAll, clearAllPaths, undoLastStep, advance, toggleSpeed, skipExecution, restart };
 }
 
 /** 对战控制器的返回类型,供子组件复用 */

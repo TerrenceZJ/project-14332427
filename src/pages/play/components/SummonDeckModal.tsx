@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { GameState, CardCategory } from '@/game/types';
 import { CARDS_BY_ID } from '@/game/cards';
+import { BEASTS } from '@/game/beasts';
 import { LINEUP_SIZE } from '@/game/constants';
 import { useDragScroll } from '@/hooks/useDragScroll';
 
@@ -196,7 +197,7 @@ export default function SummonDeckModal({ state, onToggleLineup, onRandomLineup,
                   title={`取消 ${c.name}`}
                   className={`group relative shrink-0 w-10 h-10 md:w-12 md:h-12 rounded-md border ${st.border} ${st.bg} flex items-center justify-center cursor-pointer transition-colors hover:border-secondary-400`}
                 >
-                  <i className={`${c.icon} text-lg w-5 h-5 flex items-center justify-center ${st.text}`}></i>
+                  <i className={`${BEASTS[c.owner].icon} text-lg w-5 h-5 flex items-center justify-center ${st.text}`}></i>
                   <span className="absolute -top-1.5 -right-1.5 w-4 h-4 flex items-center justify-center rounded-full bg-secondary-500 text-background-50 opacity-0 group-hover:opacity-100 transition-opacity">
                     <i className="ri-close-line w-3 h-3 flex items-center justify-center"></i>
                   </span>
@@ -279,7 +280,7 @@ export default function SummonDeckModal({ state, onToggleLineup, onRandomLineup,
               return (
                 <div
                   key={id}
-                  className={`shrink-0 snap-center w-[72%] max-w-[240px] sm:w-[46%] md:w-[31%] lg:w-[23%] xl:w-[18.5%] transition-transform duration-300 ${
+                  className={`shrink-0 snap-center snap-always w-[72%] max-w-[240px] sm:w-[46%] md:w-[31%] lg:w-[23%] xl:w-[18.5%] transition-transform duration-300 ${
                     !enemyView && activeIdx === idx ? 'scale-[1.03]' : 'scale-100'
                   }`}
                 >
@@ -317,7 +318,7 @@ export default function SummonDeckModal({ state, onToggleLineup, onRandomLineup,
                         on ? 'border-primary-400 bg-primary-500/15' : 'border-background-300 bg-background-200'
                       } ${enemyView ? 'text-foreground-600' : st.text}`}
                     >
-                      <i className={`${c.icon} text-lg md:text-2xl w-5 h-5 md:w-6 md:h-6 flex items-center justify-center`}></i>
+                      <i className={`${BEASTS[c.owner].icon} text-lg md:text-2xl w-5 h-5 md:w-6 md:h-6 flex items-center justify-center`}></i>
                     </div>
                     <span className="font-heading text-sm text-foreground-950 text-center leading-tight">{c.name}</span>
                   </div>
