@@ -1,6 +1,6 @@
 import { Fragment, forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import type { GameState, TurnEvent } from '@/game/types';
-import { COLS, ROWS, MID, key } from '@/game/constants';
+import type { GameState, Piece, TurnEvent } from '@/game/types';
+import { COLS, ROWS, MID, key, dist } from '@/game/constants';
 import PieceToken from './PieceToken';
 import PieceHpBar from './PieceHpBar';
 import DeployTrail from './DeployTrail';
@@ -209,6 +209,39 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
     ? state.pieces.filter((p) => p.team === 'player' && p.alive && p.placed && p.path.length > 0)
     : [];
 
+  // 指令阶段:已锁定的攻击/治疗目标(用于棋盘上绘制连线与目标标记)
+  const commandTargets: { from: Piece; to: Piece; kind: 'attack' | 'heal'; auto?: boolean }[] = state.phase === 'command'
+    ? state.pieces
+        .filter((p) => p.team === 'player' && p.alive && p.placed && !p.acted)
+        .flatMap((p) => {
+          const list: { from: Piece; to: Piece; kind: 'attack' | 'heal'; auto?: boolean }[] = [];
+          if (p.attackTarget) {
+            const t = state.pieces.find(
+              (o) => o.id === p.attackTarget && o.alive && o.placed && o.team !== p.team && visible.has(key(o.x, o.y)),
+            );
+            if (t) list.push({ from: p, to: t, kind: 'attack' });
+          }
+          if (p.heal > 0 && p.atk <= 0) {
+            if (p.healTarget) {
+              const t = state.pieces.find((o) => o.id === p.healTarget && o.alive && o.placed && o.team === p.team);
+              if (t) list.push({ from: p, to: t, kind: 'heal' });
+            } else {
+              // 自动治疗:从移动后的最终位置计算受伤最重的队友
+              const dest = p.path.length ? p.path[p.path.length - 1] : { x: p.x, y: p.y };
+              const t = state.pieces
+                .filter(
+                  (o) =>
+                    o.alive && o.placed && o.team === 'player' && o !== p &&
+                    o.hp < o.maxHp && dist(dest.x, dest.y, o.x, o.y) <= p.range,
+                )
+                .sort((a, b) => a.hp - b.hp)[0];
+              if (t) list.push({ from: p, to: t, kind: 'heal', auto: true });
+            }
+          }
+          return list;
+        })
+    : [];
+
   const cellStyle = (x: number, y: number) => {
     const isPlayerSide = x < MID;
     const fog = !isPlayerSide && !visible.has(key(x, y));
@@ -384,7 +417,6 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
               targetable={targetPieceIds.has(p.id)}
               targeted={selectedTargetIds.has(p.id)}
               faded={(state.phase === 'command') && p.team === 'player' && p.path.length > 0}
-              showHpBar={false}
             />
           ))}
 
@@ -392,6 +424,59 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
           {shownPieces.map((p) => (
             <PieceHpBar key={`hp-${p.id}`} piece={p} />
           ))}
+
+          {/* 指令阶段:已锁定的攻击 / 治疗目标(连线 + 目标标记) */}
+          {commandTargets.map((ct, i) => {
+            const isHeal = ct.kind === 'heal';
+            const isAuto = !!ct.auto;
+            const color = isHeal ? 'oklch(var(--accent-300))' : 'oklch(var(--secondary-400))';
+            const lineColor = isAuto ? 'oklch(var(--accent-300) / 0.7)' : color;
+            const ax = ct.from.x + 0.5;
+            const ay = ct.from.y + 0.5;
+            const bx = ct.to.x + 0.5;
+            const by = ct.to.y + 0.5;
+            const dx = bx - ax;
+            const dy = by - ay;
+            const len = Math.sqrt(dx * dx + dy * dy);
+            const angle = Math.atan2(dy, dx);
+            return (
+              <Fragment key={`ct-${i}`}>
+                <div
+                  className="absolute pointer-events-none"
+                  style={{
+                    left: `${(((ax + bx) / 2) / COLS) * 100}%`,
+                    top: `${(((ay + by) / 2) / ROWS) * 100}%`,
+                    width: `${(len / COLS) * 100}%`,
+                    borderTop: `2px ${isAuto ? 'dotted' : isHeal ? 'dashed' : 'solid'} ${lineColor}`,
+                    transform: `translate(-50%, -50%) rotate(${angle}rad)`,
+                    zIndex: 24,
+                  }}
+                ></div>
+                <div
+                  className="absolute pointer-events-none"
+                  style={{
+                    left: `${(ct.to.x / COLS) * 100}%`,
+                    top: `${(ct.to.y / ROWS) * 100}%`,
+                    width: `${CELL_PCT_X}%`,
+                    height: `${CELL_PCT_Y}%`,
+                    zIndex: 50,
+                  }}
+                >
+                  <div
+                    className="absolute inset-[-5%] rounded-full border-2 target-lock"
+                    style={{ borderColor: lineColor, boxShadow: `0 0 12px ${lineColor}` }}
+                  ></div>
+                  <span
+                    className={`absolute top-0 right-0 w-4 h-4 flex items-center justify-center rounded-full ${
+                      isHeal ? 'bg-accent-500/25 text-accent-300' : 'bg-secondary-500/25 text-secondary-400'
+                    }`}
+                  >
+                    <i className={`${isHeal ? 'ri-heart-pulse-line' : 'ri-crosshair-2-line'} w-3 h-3 flex items-center justify-center`}></i>
+                  </span>
+                </div>
+              </Fragment>
+            );
+          })}
 
           {/* 事件 */}
           {events.map((ev, i) => {

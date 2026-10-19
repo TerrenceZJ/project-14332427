@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Piece } from '@/game/types';
 import { BEASTS } from '@/game/beasts';
 import { COLS, ROWS } from '@/game/constants';
+import { getPieceBuffs, BUFF_TONES } from '@/game/buffs';
 
 interface Props {
   piece: Piece;
@@ -12,11 +13,9 @@ interface Props {
   faded?: boolean;
   /** 精简模式(小地图):只显示棋子圆点图标,省略血条与状态标记 */
   minimal?: boolean;
-  /** 是否渲染血条(主棋盘血条单独成层,由外部统一绘制) */
-  showHpBar?: boolean;
 }
 
-export default function PieceToken({ piece, revealLord, selected, targetable, targeted, faded, minimal, showHpBar = true }: Props) {
+export default function PieceToken({ piece, revealLord, selected, targetable, targeted, faded, minimal }: Props) {
   const def = BEASTS[piece.type];
   const isPlayer = piece.team === 'player';
 
@@ -86,6 +85,8 @@ export default function PieceToken({ piece, revealLord, selected, targetable, ta
     );
   }
 
+  const buffs = getPieceBuffs(piece);
+
   return (
     <>
       {/* 移动拖尾:常驻残影,靠延迟过渡制造落后的残像,静止时隐藏 */}
@@ -145,8 +146,9 @@ export default function PieceToken({ piece, revealLord, selected, targetable, ta
             ></span>
           )}
 
+          {/* 棋子本体(略缩小,给顶部 buff 留空间) */}
           <div
-            className={`relative w-[86%] h-[86%] rounded-full border flex items-center justify-center ${base} ${
+            className={`relative w-[72%] h-[72%] rounded-full border flex items-center justify-center ${base} ${
               selected || targeted ? 'ring-2 ring-primary-400 ring-offset-1 ring-offset-background-50' : targetable ? 'ring-2 ring-accent-300 ring-offset-1 ring-offset-background-50' : ''
             }`}
           >
@@ -158,50 +160,38 @@ export default function PieceToken({ piece, revealLord, selected, targetable, ta
               </span>
             )}
 
-            {piece.shieldTurns > 0 && (
-              <span className="absolute inset-[-14%] rounded-full border-2 border-primary-300/80 pulse-ring"></span>
-            )}
-
-            {piece.stunned > 0 && (
-              <span className="absolute left-[6%] bottom-[6%] text-secondary-300">
-                <i className="ri-lock-2-fill w-3 h-3 flex items-center justify-center text-[min(2vw,11px)]"></i>
-              </span>
-            )}
-            {piece.blockHits > 0 && (
-              <span className="absolute -top-[32%] right-[2%] text-primary-300">
-                <i className="ri-shield-star-fill w-3 h-3 flex items-center justify-center text-[min(2vw,11px)]"></i>
-              </span>
-            )}
-            {piece.bonusAtk > 0 && (
-              <span className="absolute top-[4%] -right-[4%] text-accent-300">
-                <i className="ri-arrow-up-fill w-3 h-3 flex items-center justify-center text-[min(2vw,10px)]"></i>
-              </span>
-            )}
-
+            {/* 姿态标记(底部) */}
             {piece.mode === 'defend' && piece.team === 'player' && (
-              <span className="absolute -bottom-[40%] left-1/2 -translate-x-1/2 text-accent-200">
+              <span className="absolute -bottom-[34%] left-1/2 -translate-x-1/2 text-accent-200">
                 <i className="ri-shield-check-line w-3 h-3 flex items-center justify-center text-[min(2vw,10px)]"></i>
               </span>
             )}
             {piece.mode === 'scout' && piece.team === 'player' && (
-              <span className="absolute -bottom-[40%] left-1/2 -translate-x-1/2 text-accent-200">
+              <span className="absolute -bottom-[34%] left-1/2 -translate-x-1/2 text-accent-200">
                 <i className="ri-radar-line w-3 h-3 flex items-center justify-center text-[min(2vw,10px)]"></i>
               </span>
             )}
           </div>
 
-          {/* HP 刻度条 + 剩余血量数字 */}
-          {showHpBar && (
-            <div className="absolute -bottom-[14%] left-1/2 -translate-x-1/2 flex items-center gap-1">
-              <div className="flex items-center gap-[2px]">
-                {Array.from({ length: piece.maxHp }).map((_, i) => (
-                  <div
-                    key={i}
-                    className={`w-[4px] h-[8px] rounded-[1px] ${i < piece.hp ? 'bg-green-400' : 'bg-background-300/70'}`}
-                  ></div>
-                ))}
-              </div>
-              <span className="font-heading text-[10px] leading-none text-foreground-950">{piece.hp}</span>
+          {/* buff / debuff 横排(顶部,保持在格内) */}
+          {buffs.length > 0 && (
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 flex items-center gap-[1px] pointer-events-none">
+              {buffs.map((b) => {
+                const t = BUFF_TONES[b.tone];
+                return (
+                  <span
+                    key={b.key}
+                    className={`relative w-3.5 h-3.5 flex items-center justify-center rounded-full border ${t.bg} ${t.border} ${t.text}`}
+                  >
+                    <i className={`${b.icon} text-[9px] leading-none flex items-center justify-center`}></i>
+                    {b.count > 1 && (
+                      <span className="absolute -top-[3px] -right-[3px] min-w-[10px] h-[10px] px-[1px] flex items-center justify-center rounded-full bg-background-950 text-background-50 text-[7px] leading-none font-label">
+                        {b.count}
+                      </span>
+                    )}
+                  </span>
+                );
+              })}
             </div>
           )}
         </div>

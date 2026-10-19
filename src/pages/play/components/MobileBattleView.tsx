@@ -53,12 +53,14 @@ interface Props {
   pendingCardId: string | null;
   pendingCount: number;
   pendingNeed: number;
+  pendingMin: number;
   pendingHint: string | null;
   paused: boolean;
   autoStyle: AutoCommandStyle;
   onAutoStyle: (s: AutoCommandStyle) => void;
   onCell: (x: number, y: number) => void;
   onPlayCard: (cardId: string) => void;
+  onConfirmCard: () => void;
   onCancelCard: () => void;
   onPhaseTimeout: () => void;
   onOpenEnemyDeck: () => void;
@@ -76,12 +78,14 @@ export default function MobileBattleView({
   pendingCardId,
   pendingCount,
   pendingNeed,
+  pendingMin,
   pendingHint,
   paused,
   autoStyle,
   onAutoStyle,
   onCell,
   onPlayCard,
+  onConfirmCard,
   onCancelCard,
   onPhaseTimeout,
   onOpenEnemyDeck,
@@ -204,27 +208,27 @@ export default function MobileBattleView({
       (p.path.length > 0 || p.attackTarget !== undefined || p.healTarget !== undefined || p.mode === 'defend'),
   );
 
-  // 指令阶段选中的己方棋子
-  const commandPiece =
+  // 指令阶段选中的棋子(己方可下指令,敌方仅查看情报)
+  const selectedPiece =
     isCommand && state.selectedId
       ? state.pieces.find(
-          (p) => p.id === state.selectedId && p.team === 'player' && p.placed && p.alive,
+          (p) => p.id === state.selectedId && p.placed && p.alive,
         ) ?? null
       : null;
 
   // 指令阶段选中棋子后,自动切到「指令」(不自动展开)
   useEffect(() => {
-    if (isCommand && commandPiece) {
+    if (isCommand && selectedPiece) {
       setTab('cmd');
     }
-  }, [isCommand, commandPiece]);
+  }, [isCommand, selectedPiece]);
 
   // 阶段切换后,若当前标签已不属于本阶段(例如离开指令阶段后仍停在「指令」),回退到「手牌」
   const validTab: Tab = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
 
   // 底部弹出面板(手牌 / 指令 / 日志)遮挡棋盘的高度,用于让棋盘可向上平移
   const overlayOpen = validTab !== 'piece' && open;
-  const isCmdPiece = validTab === 'cmd' && !!commandPiece;
+  const isCmdPiece = validTab === 'cmd' && !!selectedPiece;
 
   // 实测弹出面板高度,作为棋盘可向上平移的余量(面板展开后内容完整展示,不再需要内部滚动)
   useEffect(() => {
@@ -273,13 +277,13 @@ export default function MobileBattleView({
     }
     if (validTab === 'cmd') {
       return (
-        <div className={`flex flex-col gap-2 ${commandPiece ? '' : 'h-full min-h-0 overflow-y-auto'}`}>
-          {commandPiece ? (
+        <div className={`flex flex-col gap-2 ${selectedPiece ? '' : 'h-full min-h-0 overflow-y-auto'}`}>
+          {selectedPiece ? (
             <PieceInfoPanel
-              piece={commandPiece}
+              piece={selectedPiece}
               ap={state.ap}
               onClose={() => b.select(null)}
-              onIssue={b.issue}
+              onIssue={selectedPiece.team === 'player' ? b.issue : undefined}
               compact
             />
           ) : (
@@ -402,7 +406,7 @@ export default function MobileBattleView({
           <div className="absolute left-0 right-0 bottom-0 z-40">
             <div
               ref={overlayRef}
-              className={`${validTab === 'log' ? 'h-[33vh]' : isCmdPiece ? '' : 'h-[230px]'} px-2 pt-2 pb-2 ${
+              className={`${validTab === 'hand' ? 'hand-overlay' : validTab === 'log' ? 'h-[33vh]' : isCmdPiece ? '' : 'h-[230px]'} px-2 pt-2 pb-2 ${
                 validTab === 'hand' ? '' : 'rounded-t-xl border-t border-background-200 bg-background-100/95 backdrop-blur'
               }`}
             >
@@ -534,6 +538,14 @@ export default function MobileBattleView({
             {pendingHint}
             {pendingNeed > 1 && ` ${pendingCount}/${pendingNeed}`}
           </span>
+          {pendingCount >= pendingMin && (
+            <button
+              onClick={onConfirmCard}
+              className="font-label text-[11px] px-2.5 py-1.5 rounded-full bg-primary-500/90 text-background-50 cursor-pointer whitespace-nowrap"
+            >
+              发动
+            </button>
+          )}
           <button
             onClick={onCancelCard}
             className="font-label text-[11px] px-2.5 py-1.5 rounded-full bg-secondary-500/90 text-background-50 cursor-pointer whitespace-nowrap"

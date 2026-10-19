@@ -1,5 +1,6 @@
 import type { Piece, Mode, Pt } from '@/game/types';
 import { BEASTS } from '@/game/beasts';
+import { getPieceBuffs, BUFF_TONES } from '@/game/buffs';
 
 interface CommandPatch {
   waypoint?: Pt;
@@ -24,6 +25,7 @@ export default function PieceInfoPanel({ piece, onClose, onIssue, ap, compact = 
   const def = BEASTS[piece.type];
   const isPlayer = piece.team === 'player';
   const hpPct = Math.max(0, Math.min(1, piece.hp / piece.maxHp));
+  const buffs = getPieceBuffs(piece);
 
   const showCommand = !!onIssue && isPlayer;
   const hasPath = piece.path.length > 0;
@@ -134,14 +136,27 @@ export default function PieceInfoPanel({ piece, onClose, onIssue, ap, compact = 
       )}
 
       {/* 状态 */}
-      {(piece.mode !== 'attack' || piece.stunned > 0 || piece.blockHits > 0 || piece.bonusMove > 0 || piece.dmgReduction > 0) && (
-        <div className={`flex flex-wrap gap-1 ${compact ? 'mb-1.5' : 'mb-2.5'}`}>
-          {piece.mode === 'defend' && <Tag text="防御中" />}
-          {piece.mode === 'scout' && <Tag text="侦察中" />}
-          {piece.stunned > 0 && <Tag text={`封锁 ${piece.stunned} 回合`} />}
-          {piece.blockHits > 0 && <Tag text={`格挡 ${piece.blockHits} 次`} />}
-          {piece.dmgReduction > 0 && <Tag text={`减伤 ${piece.dmgReduction}`} />}
-          {piece.bonusMove > 0 && <Tag text={`移速 +${piece.bonusMove}`} />}
+      {(piece.mode !== 'attack' || buffs.length > 0) && (
+        <div className={`${compact ? 'mb-1.5' : 'mb-2.5'}`}>
+          {(piece.mode === 'defend' || piece.mode === 'scout') && (
+            <div className="flex flex-wrap gap-1 mb-1.5">
+              {piece.mode === 'defend' && <Tag text="防御中 · 本回合受伤害 -1" />}
+              {piece.mode === 'scout' && <Tag text="侦察中 · 额外视野" />}
+            </div>
+          )}
+          {buffs.length > 0 && (
+            <div className="rounded-md bg-background-100 border border-background-200 px-2.5 py-1.5 space-y-1">
+              {buffs.map((bf) => (
+                <div key={bf.key} className="flex items-center gap-2">
+                  <span className={`shrink-0 w-4 h-4 flex items-center justify-center rounded-full border ${BUFF_TONES[bf.tone].bg} ${BUFF_TONES[bf.tone].border} ${BUFF_TONES[bf.tone].text}`}>
+                    <i className={`${bf.icon} text-[10px] leading-none flex items-center justify-center`}></i>
+                  </span>
+                  <span className="font-heading text-[11px] text-foreground-950 whitespace-nowrap">{bf.label}</span>
+                  <span className="text-[10px] text-foreground-600 leading-tight">{bf.desc}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

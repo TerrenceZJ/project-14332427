@@ -758,6 +758,24 @@ export function autoCommand(state: GameState, style: AutoCommandStyle = 'aggress
     budget -= 1;
     const moveBudget = a.move + a.bonusMove;
 
+    // 治疗者:向受伤最重的队友靠拢并锁定治疗目标
+    if (a.heal > 0 && a.atk <= 0) {
+      a.mode = 'attack';
+      a.attackTarget = undefined;
+      const wounded = s.pieces
+        .filter((o) => o.alive && o.placed && o.team === 'player' && o !== a && o.hp < o.maxHp)
+        .sort((x, y) => x.hp - y.hp);
+      if (wounded.length > 0) {
+        const t = wounded[0];
+        a.healTarget = t.id;
+        a.path = dist(a.x, a.y, t.x, t.y) > a.range ? planPath(a, t, s, moveBudget) : [];
+      } else {
+        a.healTarget = undefined;
+        a.path = [];
+      }
+      continue;
+    }
+
     // 选取目标:不同风格有不同的偏好
     let best: Piece | null = null;
     let bestScore = Infinity;

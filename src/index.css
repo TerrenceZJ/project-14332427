@@ -97,6 +97,9 @@ html, body { background: oklch(var(--background-50)); color: oklch(var(--foregro
 @keyframes pulse-ring { 0%{transform:scale(0.9);opacity:0.6} 100%{transform:scale(1.6);opacity:0} }
 .pulse-ring { animation: pulse-ring 2.4s ease-out infinite; }
 
+@keyframes target-lock { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.65;transform:scale(1.05)} }
+.target-lock { animation: target-lock 1.6s ease-in-out infinite; }
+
 @keyframes flicker { 0%,100%{opacity:1} 50%{opacity:0.7} }
 .flicker { animation: flicker 3s ease-in-out infinite; }
 
@@ -282,6 +285,18 @@ html, body { background: oklch(var(--background-50)); color: oklch(var(--foregro
   100% { opacity: 1; transform: translate(calc(-50% + var(--fan-x, 0px)), var(--fan-y, 0px)) rotate(var(--fan-rot, 0deg)) scale(1); }
 }
 .card-fan { animation: card-fan 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+/* 手牌:小屏适配——卡牌整体缩放 + 覆盖层高度收紧,给地图留出更多空间 */
+.hand-fan { transform-origin: bottom center; }
+.hand-overlay { height: 230px; }
+@media (max-height: 720px) {
+  .hand-fan { transform: scale(0.85); }
+  .hand-overlay { height: 196px; }
+}
+@media (max-height: 620px) {
+  .hand-fan { transform: scale(0.72); }
+  .hand-overlay { height: 168px; }
+}
 
 /* 卡牌详情:浮现于屏幕正中央 */
 @keyframes card-center-in {
