@@ -3,6 +3,7 @@ import type { Piece } from '@/game/types';
 import { BEASTS } from '@/game/beasts';
 import { COLS, ROWS } from '@/game/constants';
 import { getPieceBuffs, BUFF_TONES } from '@/game/buffs';
+import PieceAvatar from './PieceAvatar';
 
 interface Props {
   piece: Piece;
@@ -18,10 +19,6 @@ interface Props {
 export default function PieceToken({ piece, revealLord, selected, targetable, targeted, faded, minimal }: Props) {
   const def = BEASTS[piece.type];
   const isPlayer = piece.team === 'player';
-
-  const base = isPlayer
-    ? 'bg-accent-500 border-accent-200 text-background-50'
-    : 'bg-secondary-500 border-secondary-200 text-background-50';
 
   const left = `${((piece.x + 0.5) / COLS) * 100}%`;
   const top = `${((piece.y + 0.5) / ROWS) * 100}%`;
@@ -148,11 +145,12 @@ export default function PieceToken({ piece, revealLord, selected, targetable, ta
 
           {/* 棋子本体(略缩小,给顶部 buff 留空间) */}
           <div
-            className={`relative w-[72%] h-[72%] rounded-full border flex items-center justify-center ${base} ${
+            className={`relative w-[72%] h-[72%] rounded-full flex items-center justify-center ${
               selected || targeted ? 'ring-2 ring-primary-400 ring-offset-1 ring-offset-background-50' : targetable ? 'ring-2 ring-accent-300 ring-offset-1 ring-offset-background-50' : ''
             }`}
           >
-            <i className={`${def.icon} text-xl w-5 h-5 flex items-center justify-center`}></i>
+            {/* 职业头像(瞳孔朝向代表朝向) */}
+            <PieceAvatar type={piece.type} facing={piece.facing} team={piece.team} />
 
             {revealLord && piece.isLord && (
               <span className="absolute top-[3%] left-[3%] w-[28%] h-[28%] min-w-[13px] min-h-[13px] flex items-center justify-center rounded-full bg-primary-500 text-background-50 border border-primary-200 text-[min(2.6vw,11px)] leading-none font-semibold pointer-events-none">

@@ -305,5 +305,36 @@ html, body { background: oklch(var(--background-50)); color: oklch(var(--foregro
 }
 .card-center-in { animation: card-center-in 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 
+/* 棋盘草坪纹理(重复小草 SVG) */
+.board-grass {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='26'%3E%3Cg stroke='%2315803d' stroke-width='1.7' stroke-linecap='round' opacity='0.4'%3E%3Cpath d='M6 26 L4 15'/%3E%3Cpath d='M9 26 L9 12'/%3E%3Cpath d='M13 26 L14 14'/%3E%3Cpath d='M17 26 L16 13'/%3E%3Cpath d='M21 26 L22 14'/%3E%3Cpath d='M24 26 L23 16'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 26px 26px;
+  background-repeat: repeat;
+}
+
+/* 敌方侧薄云层 */
+.board-clouds {
+  background:
+    radial-gradient(ellipse 42% 32% at 18% 24%, rgba(255,255,255,0.28), transparent 70%),
+    radial-gradient(ellipse 48% 34% at 66% 52%, rgba(255,255,255,0.22), transparent 70%),
+    radial-gradient(ellipse 38% 30% at 82% 18%, rgba(255,255,255,0.25), transparent 70%),
+    radial-gradient(ellipse 52% 38% at 38% 82%, rgba(255,255,255,0.18), transparent 70%);
+  animation: cloud-drift 36s ease-in-out infinite alternate;
+}
+
+@keyframes cloud-drift {
+  0% { opacity: 0.7; }
+  100% { opacity: 1; }
+}
+
+/* 部署阶段禁止放置的缓冲带(斜纹警示) */
+.deploy-restrict {
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(239, 68, 68, 0.18) 0 12px,
+    rgba(255, 255, 255, 0.04) 12px 24px
+  );
+}
+
 /* hidden honeypot (not needed here but reserved) */
 .hp-field { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }

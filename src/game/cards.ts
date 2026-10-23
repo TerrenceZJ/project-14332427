@@ -28,7 +28,7 @@ export const CARDS: CardDef[] = [
   // —— 辅助卡(消耗 0 点行动点)——
   { id: 'c_apup', name: '战意涌动', category: 'support', cost: 0, owner: 'warrior', ownerName: '战士', desc: '增加 1 点行动点。', icon: 'ri-flashlight-line', target: { kind: 'none', count: 0 } },
   { id: 'c_apdown', name: '干扰之音', category: 'support', cost: 0, owner: 'guardian', ownerName: '盾卫', desc: '减少对方 1 点行动点。', icon: 'ri-voice-recognition-line', target: { kind: 'none', count: 0 } },
-  { id: 'c_block', name: '灵箭结界', category: 'support', cost: 0, owner: 'archer', ownerName: '弓箭', desc: '让己方 1 个目标抵挡下一次伤害。', icon: 'ri-shield-star-line', target: { kind: 'ally1', count: 1 } },
+  { id: 'c_block', name: '灵箭结界', category: 'support', cost: 0, owner: 'archer', ownerName: '弓箭', desc: '让己方 1 个目标抵挡接下来一次所收到的攻击伤害（多次被攻击只能抵挡第一次伤害）。', icon: 'ri-shield-star-line', target: { kind: 'ally1', count: 1 } },
   { id: 'c_shield', name: '法术之盾', category: 'support', cost: 0, owner: 'mage', ownerName: '法师', desc: '让己方 2 个目标下次受到的伤害各 -1。', icon: 'ri-shield-flash-line', target: { kind: 'ally2', count: 2 } },
   { id: 'c_speed', name: '疾风奥义', category: 'support', cost: 0, owner: 'priest', ownerName: '牧师', desc: '让己方 1 个目标本回合移动距离 +2。', icon: 'ri-windy-line', target: { kind: 'ally1', count: 1 } },
   { id: 'c_rush', name: '神圣狂奔', category: 'support', cost: 0, owner: 'priest', ownerName: '牧师', desc: '让己方 2 个目标本回合无视移动与攻击限制。', icon: 'ri-run-line', target: { kind: 'ally2', count: 2 } },

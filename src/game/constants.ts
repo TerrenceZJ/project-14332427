@@ -1,6 +1,9 @@
 export const COLS = 10;
 export const ROWS = 8;
 export const MID = Math.floor(COLS / 2); // 左半场己方 (x < MID), 右半场敌方 (x >= MID)
+
+/** 中线两侧各保留的空地列数:部署阶段不能在这些竖排放置棋子(中间缓冲带) */
+export const DEPLOY_GAP = 2;
 export const START_AP = 6;
 export const MAX_TURNS = 12;
 

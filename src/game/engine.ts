@@ -1,6 +1,6 @@
 import type { GameState, Piece, PieceType, Team, Mode, TurnEvent, TurnFrame, Pt, LogSegment, AutoCommandStyle } from './types';
 import { BEASTS } from './beasts';
-import { COLS, ROWS, MID, START_AP, MAX_TURNS, HAND_SIZE, MAX_HAND, LINEUP_SIZE, key, inBounds, dist, manhattan, cellName } from './constants';
+import { COLS, ROWS, MID, DEPLOY_GAP, START_AP, MAX_TURNS, HAND_SIZE, MAX_HAND, LINEUP_SIZE, key, inBounds, dist, manhattan, cellName } from './constants';
 import { CARDS, CARDS_BY_ID } from './cards';
 import { visibleKeys, enemyVisibleKeys } from './vision';
 import { aiDeploy, aiCommand, planPath } from './ai';
@@ -18,7 +18,7 @@ const makePiece = (type: PieceType, team: Team, fromCard?: string): Piece => {
     type, team, fromCard, x: -1, y: -1, placed: false,
     hp: d.hp, maxHp: d.hp, atk: d.atk, range: d.range, move: d.move, heal: d.heal,
     isLord: false, lordRevealed: false, shieldTurns: 0, revived: false, alive: true,
-    mode: 'attack', path: [], attackTarget: undefined, healTarget: undefined, acted: false, revealed: team === 'player',
+    mode: 'attack', facing: team === 'player' ? 'right' : 'left', path: [], attackTarget: undefined, healTarget: undefined, acted: false, revealed: team === 'player',
     stunned: 0, blockHits: 0, dmgReduction: 0, bonusMove: 0, bonusAtk: 0, dotImmunity: 0,
   };
 };
@@ -65,6 +65,16 @@ function coordKnown(p: Piece): boolean {
 /** 生成棋子名的着色片段(不显示坐标) */
 function pieceRef(p: Piece): LogSegment[] {
   return [{ text: BEASTS[p.type].name, team: p.team }];
+}
+
+/** 根据一步位移(from → to)更新棋子朝向 */
+function setFacing(p: Piece, from: Pt, to: Pt) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (dx > 0) p.facing = 'right';
+  else if (dx < 0) p.facing = 'left';
+  else if (dy > 0) p.facing = 'down';
+  else if (dy < 0) p.facing = 'up';
 }
 
 /** 刷新"曾被看见"标记:当前处于玩家视野内的敌方棋子永久标记为已知 */
@@ -158,7 +168,7 @@ export function placePiece(state: GameState, pieceId: string, x: number, y: numb
   if (state.phase !== 'deploy') return state;
   const p = state.pieces.find((q) => q.id === pieceId);
   if (!p || p.team !== 'player') return state;
-  if (x >= MID || x < 0) return state;
+  if (x >= MID - DEPLOY_GAP || x < 0) return state;
   if (y < 0 || y >= ROWS) return state;
   if (at(state, x, y)) return state;
   const s = clone(state);
@@ -186,7 +196,7 @@ export function redeployPiece(state: GameState, pieceId: string, x: number, y: n
   if (state.phase !== 'deploy') return state;
   const p = state.pieces.find((q) => q.id === pieceId);
   if (!p || p.team !== 'player' || !p.placed) return state;
-  if (x >= MID || x < 0) return state;
+  if (x >= MID - DEPLOY_GAP || x < 0) return state;
   if (y < 0 || y >= ROWS) return state;
   if (at(state, x, y)) return state;
   if (p.x === x && p.y === y) return state;
@@ -214,7 +224,7 @@ export function autoDeploy(state: GameState): GameState {
   const mine = s.pieces.filter((p) => p.team === 'player');
   mine.forEach((p) => { p.x = -1; p.y = -1; p.placed = false; p.isLord = false; });
   const slots: { x: number; y: number }[] = [];
-  for (let y = 1; y < ROWS - 1; y++) for (let x = 1; x < MID - 1; x++) slots.push({ x, y });
+  for (let y = 1; y < ROWS - 1; y++) for (let x = 1; x < MID - DEPLOY_GAP; x++) slots.push({ x, y });
   slots.sort(() => Math.random() - 0.5);
   mine.forEach((p, i) => {
     const slot = slots[i % slots.length];
@@ -260,17 +270,30 @@ function dealDirectDamage(s: GameState, p: Piece, amount: number, events?: TurnE
   if (p.hp <= 0) resolveDeath(s, p, events || []);
 }
 
-/** 击退:朝己方底线方向后退 steps 格 */
+/** 击退:朝棋子朝向的反方向后退 steps 格 */
 function knockback(s: GameState, p: Piece, steps: number) {
-  const dir = p.x < MID ? -1 : 1;
-  let cx = p.x;
-  for (let i = 0; i < steps; i++) {
-    const nx = cx + dir;
-    if (!inBounds(nx, p.y)) break;
-    if (at(s, nx, p.y)) break;
-    cx = nx;
+  let dx = 0;
+  let dy = 0;
+  switch (p.facing) {
+    case 'right': dx = -1; break;
+    case 'left': dx = 1; break;
+    case 'up': dy = 1; break;
+    case 'down': dy = -1; break;
   }
-  if (cx !== p.x) p.x = cx;
+  let cx = p.x;
+  let cy = p.y;
+  for (let i = 0; i < steps; i++) {
+    const nx = cx + dx;
+    const ny = cy + dy;
+    if (!inBounds(nx, ny)) break;
+    if (at(s, nx, ny)) break;
+    cx = nx;
+    cy = ny;
+  }
+  if (cx !== p.x || cy !== p.y) {
+    p.x = cx;
+    p.y = cy;
+  }
 }
 
 function shufflePositions(s: GameState, pieces: Piece[]) {
@@ -1005,6 +1028,7 @@ export function executeTurn(input: GameState): TurnFrame[] {
           const from = { x: item.m.p.x, y: item.m.p.y };
           item.m.p.x = item.x;
           item.m.p.y = item.y;
+          setFacing(item.m.p, from, { x: item.x, y: item.y });
           item.m.idx += 1;
           moved = true;
           stepMoves.push({ p: item.m.p, from });
@@ -1043,6 +1067,7 @@ export function executeTurn(input: GameState): TurnFrame[] {
           const from = { x: item.m.p.x, y: item.m.p.y };
           item.m.p.x = item.x;
           item.m.p.y = item.y;
+          setFacing(item.m.p, from, { x: item.x, y: item.y });
           item.m.idx += 1;
           moved = true;
           stepMoves.push({ p: item.m.p, from });

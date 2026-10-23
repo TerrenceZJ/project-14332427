@@ -9,6 +9,9 @@ export type PieceType =
 
 export type Mode = 'attack' | 'defend' | 'scout';
 
+/** 棋子朝向:上 / 下 / 左 / 右 */
+export type Facing = 'up' | 'down' | 'left' | 'right';
+
 /** 自动指令风格:激进压上 / 保守防御 / 优先集火灵主 */
 export type AutoCommandStyle = 'aggressive' | 'defensive' | 'focusLord';
 
@@ -44,6 +47,8 @@ export interface Piece {
   revived: boolean;
   alive: boolean;
   mode: Mode;
+  /** 棋子朝向:初始面向对手,移动后朝向最后一次移动的方向 */
+  facing: Facing;
   /** 移动路径:指令阶段规划的完整步进序列(每项为下一步落点,按顺序执行) */
   path: Pt[];
   /** 攻击模式指定的目标棋子 id */

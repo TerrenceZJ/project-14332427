@@ -53,7 +53,8 @@ interface Props {
   pendingCardId: string | null;
   pendingCount: number;
   pendingNeed: number;
-  pendingMin: number;
+  pendingReady: boolean;
+  previewCell: { x: number; y: number } | null;
   pendingHint: string | null;
   paused: boolean;
   autoStyle: AutoCommandStyle;
@@ -78,7 +79,8 @@ export default function MobileBattleView({
   pendingCardId,
   pendingCount,
   pendingNeed,
-  pendingMin,
+  pendingReady,
+  previewCell,
   pendingHint,
   paused,
   autoStyle,
@@ -399,6 +401,7 @@ export default function MobileBattleView({
           events={b.events}
           onCellClick={onCell}
           bottomOverlay={overlayH}
+          previewCell={previewCell}
         />
 
         {/* 弹出窗口覆盖层:手牌 / 指令 / 日志 */}
@@ -538,7 +541,7 @@ export default function MobileBattleView({
             {pendingHint}
             {pendingNeed > 1 && ` ${pendingCount}/${pendingNeed}`}
           </span>
-          {pendingCount >= pendingMin && (
+          {pendingReady && (
             <button
               onClick={onConfirmCard}
               className="font-label text-[11px] px-2.5 py-1.5 rounded-full bg-primary-500/90 text-background-50 cursor-pointer whitespace-nowrap"

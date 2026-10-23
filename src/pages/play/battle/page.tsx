@@ -166,13 +166,21 @@ export default function BattlePage() {
       case 'ally1': return '选择 1 个己方目标';
       case 'ally2': return '选择己方目标(1~2 个)';
       case 'enemyAlly': return pending!.pieceIds.length === 0 ? '先选择敌方目标' : '再选择己方目标';
-      case 'cell': return '点击战场,选择 3×3 区域中心';
+      case 'cell': return pending!.cell ? '已选区域,点击发动' : '点击战场,选择 3×3 区域中心';
       default: return null;
     }
   }, [pendingCard, pending]);
 
   // 发动卡牌所需的最少目标数(穿云箭雨必须选满敌方+己方两个目标)
   const pendingMin = pendingCard?.target.kind === 'enemyAlly' ? 2 : 1;
+
+  // 当前选中的卡牌是否已满足发动条件(区域卡需选定中心格,目标卡需选满目标)
+  const pendingReady = pending && pendingCard
+    ? pendingCard.target.kind === 'cell' ? !!pending.cell : pending.pieceIds.length >= pendingMin
+    : false;
+
+  // 区域卡预览中心(仅区域卡选中后显示 3×3 范围)
+  const previewCell = pending && pendingCard?.target.kind === 'cell' ? pending.cell : null;
 
   const handlePlayCard = (cardId: string) => {
     const card = CARDS_BY_ID[cardId];
@@ -187,7 +195,7 @@ export default function BattlePage() {
   const handleCell = (x: number, y: number) => {
     if (pending && pendingCard && (state.phase === 'card1')) {
       if (pendingCard.target.kind === 'cell') {
-        setConfirmPlay({ cardId: pending.cardId, pieceIds: [], cell: { x, y } });
+        setPending({ ...pending, cell: { x, y } });
         return;
       }
       const occupant = at(state, x, y);
@@ -308,7 +316,11 @@ export default function BattlePage() {
 
   const confirmPendingCard = () => {
     if (!pending || !pendingCard) return;
-    if (pending.pieceIds.length < pendingMin) return;
+    if (pendingCard.target.kind === 'cell') {
+      if (!pending.cell) return;
+    } else if (pending.pieceIds.length < pendingMin) {
+      return;
+    }
     setConfirmPlay({ cardId: pending.cardId, pieceIds: pending.pieceIds, cell: pending.cell });
   };
 
@@ -324,7 +336,8 @@ export default function BattlePage() {
         pendingCardId={pending?.cardId ?? null}
         pendingCount={pending?.pieceIds.length ?? 0}
         pendingNeed={pendingCard?.target.count ?? 0}
-        pendingMin={pendingMin}
+        pendingReady={pendingReady}
+        previewCell={previewCell}
         pendingHint={pendingHint}
         paused={paused}
         autoStyle={autoStyle}

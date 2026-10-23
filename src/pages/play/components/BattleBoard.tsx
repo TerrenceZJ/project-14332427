@@ -1,6 +1,6 @@
 import { Fragment, forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { GameState, Piece, TurnEvent } from '@/game/types';
-import { COLS, ROWS, MID, key, dist } from '@/game/constants';
+import { COLS, ROWS, MID, DEPLOY_GAP, key, dist } from '@/game/constants';
 import PieceToken from './PieceToken';
 import PieceHpBar from './PieceHpBar';
 import DeployTrail from './DeployTrail';
@@ -25,10 +25,12 @@ interface Props {
   onZoomChange?: (zoom: number) => void;
   /** 底部被面板遮挡的高度(px),让棋盘可额外向上平移,露出被挡住的下方区域 */
   bottomOverlay?: number;
+  /** 卡牌 3×3 技能范围的预览中心(选中区域卡时,展示即将覆盖的范围) */
+  previewCell?: { x: number; y: number } | null;
 }
 
 const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
-  { state, visible, selectedId, moveCells, rangeCells, targetPieceIds, selectedTargetIds, events, onCellClick, onZoomChange, bottomOverlay = 0 }: Props,
+  { state, visible, selectedId, moveCells, rangeCells, targetPieceIds, selectedTargetIds, events, onCellClick, onZoomChange, bottomOverlay = 0, previewCell = null }: Props,
   ref,
 ) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -248,11 +250,11 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
     const isMove = moveCells.has(key(x, y));
     const isRange = !isMove && rangeCells.has(key(x, y));
     const checker = (x + y) % 2 === 0;
-    if (fog) return 'bg-background-400/70';
+    if (fog) return 'bg-background-400/75';
     if (isPlayerSide) {
-      return checker ? 'bg-accent-500/[0.06]' : 'bg-accent-500/[0.11]';
+      return checker ? 'bg-emerald-500/[0.13]' : 'bg-emerald-500/[0.22]';
     }
-    return checker ? 'bg-secondary-500/[0.05]' : 'bg-secondary-500/[0.10]';
+    return checker ? 'bg-emerald-700/[0.17]' : 'bg-emerald-700/[0.26]';
   };
 
   return (
@@ -283,7 +285,7 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
         >
           {/* 网格层 */}
           <div
-            className="absolute inset-0 grid"
+            className="absolute inset-0 grid board-grass"
             style={{ gridTemplateColumns: `repeat(${COLS}, 1fr)`, gridTemplateRows: `repeat(${ROWS}, 1fr)` }}
           >
             {cells.map((_, i) => {
@@ -309,10 +311,41 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
             })}
           </div>
 
+          {/* 部署阶段:中线两侧禁止放置的缓冲带 */}
+          {state.phase === 'deploy' && (
+            <div
+              className="absolute deploy-restrict pointer-events-none"
+              style={{
+                left: `${((MID - DEPLOY_GAP) / COLS) * 100}%`,
+                top: 0,
+                bottom: 0,
+                width: `${((DEPLOY_GAP * 2) / COLS) * 100}%`,
+                zIndex: 3,
+              }}
+            >
+              <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-1 px-2.5 py-1 rounded-full bg-background-950/70 text-background-50 font-label text-[10px] whitespace-nowrap">
+                <i className="ri-lock-2-line w-3.5 h-3.5 flex items-center justify-center"></i>
+                初始不可放置
+              </span>
+            </div>
+          )}
+
           {/* 中线 */}
           <div
             className="absolute top-0 bottom-0 w-[2px] bg-primary-500/40"
-            style={{ left: `${(MID / COLS) * 100}%` }}
+            style={{ left: `${(MID / COLS) * 100}%`, zIndex: 6 }}
+          ></div>
+
+          {/* 敌方侧薄云层 */}
+          <div
+            className="absolute board-clouds pointer-events-none"
+            style={{
+              left: `${(MID / COLS) * 100}%`,
+              top: 0,
+              bottom: 0,
+              width: `${((COLS - MID) / COLS) * 100}%`,
+              zIndex: 4,
+            }}
           ></div>
 
           {/* 部署轨迹 */}
@@ -332,6 +365,20 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
               }}
             ></div>
           ))}
+
+          {/* 卡牌 3×3 技能范围预览 */}
+          {previewCell && (
+            <div
+              className="absolute pointer-events-none bg-primary-500/20 border-2 border-primary-400/80 animate-pulse"
+              style={{
+                left: `${((previewCell.x - 1) / COLS) * 100}%`,
+                top: `${((previewCell.y - 1) / ROWS) * 100}%`,
+                width: `${(3 / COLS) * 100}%`,
+                height: `${(3 / ROWS) * 100}%`,
+                zIndex: 7,
+              }}
+            ></div>
+          )}
 
           {/* 移动目标 */}
           {pendingMoves.map((p) => {
