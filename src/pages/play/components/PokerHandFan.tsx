@@ -46,7 +46,7 @@ export default function PokerHandFan({ state, onSelectCard }: Props) {
             key={c.id}
             type="button"
             onClick={() => usable && onSelectCard(c.id)}
-            className={`card-fan absolute rounded-xl border p-2 flex flex-col items-center text-left shadow-lg backdrop-blur-sm ${
+            className={`card-fan pointer-events-auto absolute rounded-xl border p-2 flex flex-col items-center text-left shadow-lg backdrop-blur-sm ${
               usable ? 'cursor-pointer' : 'cursor-not-allowed'
             } ${usable ? `${t.bg} ${t.border} hover:border-primary-400` : 'border-background-300 bg-background-100 opacity-60 grayscale'}`}
             style={{

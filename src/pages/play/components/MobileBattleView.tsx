@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { AutoCommandStyle, Piece } from '@/game/types';
+import type { AutoCommandStyle, Mode, Piece } from '@/game/types';
 import type { Battle } from '@/pages/play/hooks/useBattle';
 import { LINEUP_SIZE } from '@/game/constants';
-import BattleBoard from './BattleBoard';
+import { BEASTS } from '@/game/beasts';
+import BattleBoard, { type BattleBoardHandle } from './BattleBoard';
 import BattleStatusBar from './BattleStatusBar';
 import CountdownRingFrame from './CountdownRingFrame';
 import MobilePieceRail from './MobilePieceRail';
@@ -99,6 +100,7 @@ export default function MobileBattleView({
   const [open, setOpen] = useState(false);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const boardRef = useRef<BattleBoardHandle>(null);
   const [overlayH, setOverlayH] = useState(0);
 
   const isDeploy = state.phase === 'deploy';
@@ -210,13 +212,16 @@ export default function MobileBattleView({
       (p.path.length > 0 || p.attackTarget !== undefined || p.healTarget !== undefined || p.mode === 'defend'),
   );
 
-  // 指令阶段选中的棋子(己方可下指令,敌方仅查看情报)
+  // 指令阶段 / 抽卡阶段选中的棋子(指令阶段己方可下指令,敌方仅查看情报;抽卡阶段只读查看)
   const selectedPiece =
-    isCommand && state.selectedId
+    (isCommand || canPlay) && state.selectedId
       ? state.pieces.find(
           (p) => p.id === state.selectedId && p.placed && p.alive,
         ) ?? null
       : null;
+
+  // 抽卡阶段:点击棋子只读查看其情报与 buff(有卡牌待选目标时不显示)
+  const showCard1Piece = canPlay && !!selectedPiece && !pendingCardId;
 
   // 指令阶段选中棋子后,自动切到「指令」(不自动展开)
   useEffect(() => {
@@ -224,6 +229,35 @@ export default function MobileBattleView({
       setTab('cmd');
     }
   }, [isCommand, selectedPiece]);
+
+  // 选中新棋子时展开面板;对同一棋子新增路径(开始规划移动)时收起面板露出棋盘
+  const prevSelRef = useRef<{ id: string | null; len: number }>({ id: null, len: 0 });
+  useEffect(() => {
+    const id = selectedPiece?.id ?? null;
+    const len = selectedPiece?.path.length ?? 0;
+    const prev = prevSelRef.current;
+    if (isCommand) {
+      if (prev.id !== id && id) {
+        setOpen(true);
+      } else if (prev.id === id && len > prev.len) {
+        setOpen(false);
+      }
+    }
+    prevSelRef.current = { id, len };
+  }, [isCommand, selectedPiece]);
+
+  // 点击选中棋子时,自动将其平移到棋盘视口中心
+  const lastCenteredRef = useRef<string | null>(null);
+  useEffect(() => {
+    const piece = selectedPiece;
+    if (!piece) {
+      lastCenteredRef.current = null;
+      return;
+    }
+    if (lastCenteredRef.current === piece.id) return;
+    lastCenteredRef.current = piece.id;
+    boardRef.current?.centerOn(piece.x, piece.y);
+  }, [selectedPiece]);
 
   // 阶段切换后,若当前标签已不属于本阶段(例如离开指令阶段后仍停在「指令」),回退到「手牌」
   const validTab: Tab = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
@@ -391,6 +425,7 @@ export default function MobileBattleView({
       {/* 棋盘区域 - 占据所有可用空间 */}
       <section className="relative flex-1 min-h-0">
         <BattleBoard
+          ref={boardRef}
           state={state}
           visible={visible}
           selectedId={state.selectedId}
@@ -405,8 +440,8 @@ export default function MobileBattleView({
         />
 
         {/* 弹出窗口覆盖层:手牌 / 指令 / 日志 */}
-        {validTab !== 'piece' && open && (
-          <div className="absolute left-0 right-0 bottom-0 z-40">
+        {validTab !== 'piece' && open && !showCard1Piece && (
+          <div className={`absolute left-0 right-0 bottom-0 z-40 ${validTab === 'hand' ? 'pointer-events-none' : ''}`}>
             <div
               ref={overlayRef}
               className={`${validTab === 'hand' ? 'hand-overlay' : validTab === 'log' ? 'h-[33vh]' : isCmdPiece ? '' : 'h-[230px]'} px-2 pt-2 pb-2 ${
@@ -414,6 +449,57 @@ export default function MobileBattleView({
               }`}
             >
               {overlayContent}
+            </div>
+          </div>
+        )}
+
+        {/* 抽卡阶段:查看选中棋子的情报与 buff(只读) */}
+        {showCard1Piece && (
+          <div className="absolute left-0 right-0 bottom-0 z-[45] px-2 pt-2 pb-2">
+            <div className="rounded-t-xl border-t border-background-200 bg-background-100/95 backdrop-blur px-2 pt-2 pb-2">
+              <PieceInfoPanel piece={selectedPiece} ap={state.ap} onClose={() => b.select(null)} compact />
+            </div>
+          </div>
+        )}
+
+        {/* 指令阶段:面板收起后,选中棋子显示精简操作条(模式 / 撤销 / 确认),无需反复展开 */}
+        {isCommand && selectedPiece && !open && !selectedPiece.acted && (
+          <div className="absolute left-0 right-0 bottom-0 z-[45] px-2 pb-2">
+            <div className="flex items-center gap-1.5 rounded-xl border border-background-300 bg-background-100/95 backdrop-blur px-2 py-1.5 shadow-lg">
+              <span className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md bg-accent-500/15 border border-accent-500/40 text-accent-300">
+                <i className={`${BEASTS[selectedPiece.type].icon} text-sm w-4 h-4 flex items-center justify-center`}></i>
+              </span>
+              <span className="shrink-0 font-heading text-xs text-foreground-950 truncate max-w-[64px]">
+                {BEASTS[selectedPiece.type].name}
+              </span>
+              <div className="flex-1 min-w-0 flex items-center gap-0.5 p-0.5 rounded-full bg-background-200/70 border border-background-300/50">
+                {(['attack', 'defend', 'scout'] as Mode[]).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => b.issue(selectedPiece.id, { mode: m })}
+                    className={`flex-1 px-1 py-0.5 rounded-full font-label text-[10px] whitespace-nowrap cursor-pointer transition-colors ${
+                      selectedPiece.mode === m ? 'bg-primary-500 text-background-50' : 'text-foreground-600 hover:text-foreground-900'
+                    }`}
+                  >
+                    {m === 'attack' ? '攻击' : m === 'defend' ? '防御' : '侦察'}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => b.issue(selectedPiece.id, { undoStep: true })}
+                disabled={selectedPiece.path.length === 0}
+                className="shrink-0 w-7 h-7 flex items-center justify-center rounded-md border border-background-300 text-foreground-700 hover:border-primary-400 hover:text-primary-300 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              >
+                <i className="ri-arrow-go-back-line w-4 h-4 flex items-center justify-center"></i>
+              </button>
+              <button
+                onClick={() => b.issue(selectedPiece.id, { confirm: true })}
+                disabled={state.ap < (selectedPiece.mode === 'scout' ? 2 : 1)}
+                className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+              >
+                <i className="ri-check-line w-3.5 h-3.5 flex items-center justify-center"></i>
+                确认 · {selectedPiece.mode === 'scout' ? 2 : 1}点
+              </button>
             </div>
           </div>
         )}

@@ -100,6 +100,12 @@ html, body { background: oklch(var(--background-50)); color: oklch(var(--foregro
 @keyframes target-lock { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.65;transform:scale(1.05)} }
 .target-lock { animation: target-lock 1.6s ease-in-out infinite; }
 
+@keyframes targetable-pulse { 0%,100%{transform:scale(0.96);opacity:0.9} 50%{transform:scale(1.08);opacity:0.45} }
+.targetable-pulse { animation: targetable-pulse 1s ease-in-out infinite; }
+
+@keyframes targeted-pop { 0%{transform:scale(0.7);opacity:0} 60%{transform:scale(1.12);opacity:1} 100%{transform:scale(1);opacity:1} }
+.targeted-pop { animation: targeted-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
 @keyframes flicker { 0%,100%{opacity:1} 50%{opacity:0.7} }
 .flicker { animation: flicker 3s ease-in-out infinite; }
 
@@ -251,6 +257,13 @@ html, body { background: oklch(var(--background-50)); color: oklch(var(--foregro
 /* 战斗日志:新条目高亮闪一下 */
 @keyframes log-new { 0% { background-color: oklch(var(--primary-500) / 0.3); } 100% { background-color: transparent; } }
 .log-new { animation: log-new 1.5s ease-out both; border-radius: 4px; }
+
+/* 敌方使用技能:顶部弹出提示 */
+@keyframes enemy-toast-in {
+  0% { opacity: 0; transform: translateY(-14px) scale(0.9); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.enemy-toast { animation: enemy-toast-in 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
 
 
 /* 阶段切换:阶段名浮现 / 分隔线展开 */

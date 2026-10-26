@@ -10,6 +10,8 @@ export interface BattleBoardHandle {
   zoomIn: () => void;
   zoomOut: () => void;
   resetView: () => void;
+  /** 将指定格子平移到视口中心(选中棋子时自动居中) */
+  centerOn: (x: number, y: number) => void;
 }
 
 interface Props {
@@ -111,10 +113,20 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
   const zoomIn = () => applyScale(scaleRef.current + 0.25);
   const zoomOut = () => applyScale(scaleRef.current - 0.25);
 
+  const centerOn = (x: number, y: number) => {
+    const { w, h } = vpRef.current;
+    const boardHNow = h * scaleRef.current;
+    const boardWNow = boardHNow * (COLS / ROWS);
+    const cx = ((x + 0.5) / COLS) * boardWNow;
+    const cy = ((y + 0.5) / ROWS) * boardHNow;
+    updateOffset(w / 2 - cx, h / 2 - cy);
+  };
+
   useImperativeHandle(ref, () => ({
     zoomIn,
     zoomOut,
     resetView,
+    centerOn,
   }), []);
 
   useEffect(() => {

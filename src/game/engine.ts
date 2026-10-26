@@ -884,22 +884,21 @@ function legalMoves(s: GameState, p: Piece): Set<string> {
   if (remaining <= 0) return set;
   const anchor = p.path.length ? p.path[p.path.length - 1] : { x: p.x, y: p.y };
   const others = s.pieces.filter((q) => q.id !== p.id);
-  for (let dx = -remaining; dx <= remaining; dx++) {
-    if (dx === 0) continue;
-    const nx = anchor.x + dx;
-    const ny = anchor.y;
-    if (!inBounds(nx, ny)) continue;
-    if (isCommandOccupied(others, nx, ny)) continue;
-    set.add(key(nx, ny));
-  }
-  for (let dy = -remaining; dy <= remaining; dy++) {
-    if (dy === 0) continue;
-    const nx = anchor.x;
-    const ny = anchor.y + dy;
-    if (!inBounds(nx, ny)) continue;
-    if (isCommandOccupied(others, nx, ny)) continue;
-    set.add(key(nx, ny));
-  }
+
+  // 沿四个方向直线推进,遇到被占用或出界的格子即停下(不能穿过棋子)
+  const walk = (dx: number, dy: number) => {
+    let nx = anchor.x + dx;
+    let ny = anchor.y + dy;
+    for (let steps = 0; steps < remaining; steps++, nx += dx, ny += dy) {
+      if (!inBounds(nx, ny) || isCommandOccupied(others, nx, ny)) break;
+      set.add(key(nx, ny));
+    }
+  };
+  walk(-1, 0);
+  walk(1, 0);
+  walk(0, -1);
+  walk(0, 1);
+
   return set;
 }
 

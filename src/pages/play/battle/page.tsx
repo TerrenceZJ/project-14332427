@@ -13,6 +13,7 @@ import SummonDeckModal from '@/pages/play/components/SummonDeckModal';
 import DrawReveal from '@/pages/play/components/DrawReveal';
 import EnemyDeckModal from '@/pages/play/components/EnemyDeckModal';
 import PhaseTransitionOverlay from '@/pages/play/components/PhaseTransitionOverlay';
+import EnemySkillToast from '@/pages/play/components/EnemySkillToast';
 
 interface Pending {
   cardId: string;
@@ -45,6 +46,7 @@ export default function BattlePage() {
 
   useEffect(() => {
     if (state.phase !== 'card1') setPending(null);
+    if (state.phase !== 'card1') setDrawReveal(null);
     setPhaseEndNotice(false);
     setHealChoice(null);
     setConfirmPlay(null);
@@ -353,6 +355,7 @@ export default function BattlePage() {
 
       <ResultOverlay state={state} onRestart={b.restart} onLobby={() => navigate('/')} />
       <PhaseTransitionOverlay phase={state.phase} turn={state.turn} />
+      <EnemySkillToast log={state.log} />
 
       {drawReveal &&
         createPortal(

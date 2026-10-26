@@ -1,4 +1,4 @@
-import { useEffect, type CSSProperties } from 'react';
+import { useEffect, useRef, type CSSProperties } from 'react';
 import type { CardCategory } from '@/game/types';
 import { CARDS_BY_ID, cardRarity, RARITY, type CardRarity } from '@/game/cards';
 
@@ -26,10 +26,15 @@ export default function DrawReveal({ cardId, deckLeft, onDone }: Props) {
   const c = CARDS_BY_ID[cardId];
   const rarity: CardRarity = c ? cardRarity(cardId) : 'common';
 
+  const onDoneRef = useRef(onDone);
   useEffect(() => {
-    const t = window.setTimeout(onDone, rarity === 'legendary' ? 2350 : 1900);
+    onDoneRef.current = onDone;
+  });
+
+  useEffect(() => {
+    const t = window.setTimeout(() => onDoneRef.current(), rarity === 'legendary' ? 2350 : 1900);
     return () => window.clearTimeout(t);
-  }, [cardId, rarity, onDone]);
+  }, [cardId, rarity]);
 
   if (!c) return null;
   const t = catTone[c.category];

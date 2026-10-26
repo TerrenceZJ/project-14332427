@@ -146,9 +146,35 @@ export default function PieceToken({ piece, revealLord, selected, targetable, ta
           {/* 棋子本体(略缩小,给顶部 buff 留空间) */}
           <div
             className={`relative w-[72%] h-[72%] rounded-full flex items-center justify-center ${
-              selected || targeted ? 'ring-2 ring-primary-400 ring-offset-1 ring-offset-background-50' : targetable ? 'ring-2 ring-accent-300 ring-offset-1 ring-offset-background-50' : ''
+              selected ? 'ring-2 ring-primary-400 ring-offset-1 ring-offset-background-50' : ''
             }`}
           >
+            {/* 可被卡牌选中的目标:脉冲光环提示 */}
+            {targetable && !targeted && (
+              <span
+                className="absolute -inset-[10%] rounded-full pointer-events-none targetable-pulse"
+                style={{
+                  border: '2px solid oklch(var(--accent-400))',
+                  boxShadow: '0 0 14px oklch(var(--accent-400) / 0.85)',
+                }}
+              ></span>
+            )}
+            {/* 已选中的卡牌目标:高亮光环 + 对勾标记 */}
+            {targeted && (
+              <>
+                <span
+                  className="absolute -inset-[10%] rounded-full pointer-events-none targeted-pop"
+                  style={{
+                    border: '3px solid oklch(var(--primary-400))',
+                    boxShadow: '0 0 18px oklch(var(--primary-400) / 0.95)',
+                  }}
+                ></span>
+                <span className="absolute -top-[8%] -right-[8%] w-4 h-4 flex items-center justify-center rounded-full bg-primary-500 text-background-50 border border-primary-200 z-10">
+                  <i className="ri-check-line text-[10px] leading-none flex items-center justify-center"></i>
+                </span>
+              </>
+            )}
+
             {/* 职业头像(瞳孔朝向代表朝向) */}
             <PieceAvatar type={piece.type} facing={piece.facing} team={piece.team} />
 
