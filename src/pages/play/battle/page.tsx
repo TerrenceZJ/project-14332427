@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useBattle } from '@/pages/play/hooks/useBattle';
-import { visibleKeys, legalMoves, at } from '@/game/engine';
-import { key, inBounds, cellName, LINEUP_SIZE } from '@/game/constants';
+import { visibleKeys, legalMoves, at, createGame, createLevelGame } from '@/game/engine';
+import { key, inBounds, cellName } from '@/game/constants';
 import { CARDS_BY_ID } from '@/game/cards';
 import { BEASTS } from '@/game/beasts';
+import { TUTORIAL_LEVELS } from '@/game/levels';
 import type { Team, AutoCommandStyle } from '@/game/types';
 import MobileBattleView from '@/pages/play/components/MobileBattleView';
 import ResultOverlay from '@/pages/play/components/ResultOverlay';
@@ -14,6 +15,7 @@ import DrawReveal from '@/pages/play/components/DrawReveal';
 import EnemyDeckModal from '@/pages/play/components/EnemyDeckModal';
 import PhaseTransitionOverlay from '@/pages/play/components/PhaseTransitionOverlay';
 import EnemySkillToast from '@/pages/play/components/EnemySkillToast';
+import TutorialOverlay from '@/pages/play/components/TutorialOverlay';
 
 interface Pending {
   cardId: string;
@@ -29,11 +31,18 @@ interface HealChoice {
 
 export default function BattlePage() {
   const navigate = useNavigate();
-  const b = useBattle();
+  const { levelId } = useParams();
+  const level = levelId != null ? TUTORIAL_LEVELS.find((l) => l.id === Number(levelId)) : undefined;
+  const createInitial = useMemo(() => {
+    if (level) return () => createLevelGame(level.preset);
+    return () => createGame();
+  }, [level]);
+  const b = useBattle(createInitial);
   const { state } = b;
+  const [tutorialStep, setTutorialStep] = useState(0);
   const [pending, setPending] = useState<Pending | null>(null);
   const [phaseEndNotice, setPhaseEndNotice] = useState(false);
-  const [summonOpen, setSummonOpen] = useState(true);
+  const [summonOpen, setSummonOpen] = useState(!level);
   const [enemyDeckOpen, setEnemyDeckOpen] = useState(false);
   const [drawReveal, setDrawReveal] = useState<string | null>(null);
   const [healChoice, setHealChoice] = useState<HealChoice | null>(null);
@@ -115,7 +124,7 @@ export default function BattlePage() {
           if (dx === 0 && dy === 0) continue;
           const nx = selected.x + dx;
           const ny = selected.y + dy;
-          if (inBounds(nx, ny)) set.add(key(nx, ny));
+          if (inBounds(nx, ny, state.cols, state.rows)) set.add(key(nx, ny));
         }
       }
       return set;
@@ -127,11 +136,11 @@ export default function BattlePage() {
         if (dx === 0 && dy === 0) continue;
         const nx = selected.x + dx;
         const ny = selected.y + dy;
-        if (inBounds(nx, ny)) set.add(key(nx, ny));
+        if (inBounds(nx, ny, state.cols, state.rows)) set.add(key(nx, ny));
       }
     }
     return set;
-  }, [selected, state.phase]);
+  }, [selected, state.phase, state.cols, state.rows]);
 
   const pendingCard = pending ? CARDS_BY_ID[pending.cardId] : null;
 
@@ -271,7 +280,7 @@ export default function BattlePage() {
       setPhaseEndNotice(false);
       noticeTimer.current = null;
       if (phase === 'deploy') {
-        if (state.lineup.length < LINEUP_SIZE) b.randomLineup();
+        if (state.lineup.length < state.lineupSize) b.randomLineup();
         b.randomize();
         b.start();
         setSummonOpen(false);
@@ -325,6 +334,53 @@ export default function BattlePage() {
     }
     setConfirmPlay({ cardId: pending.cardId, pieceIds: pending.pieceIds, cell: pending.cell });
   };
+
+  const tutorialSteps = useMemo(() => level?.steps ?? [], [level]);
+  // 从当前进度向后查找第一条属于当前阶段的引导步骤(引导跨阶段自动衔接)
+  const activeStepIndex = useMemo(() => {
+    for (let i = tutorialStep; i < tutorialSteps.length; i++) {
+      const st = tutorialSteps[i];
+      if (!st.phase || st.phase === state.phase) return i;
+    }
+    return -1;
+  }, [tutorialSteps, tutorialStep, state.phase]);
+  const currentStep = activeStepIndex >= 0 ? tutorialSteps[activeStepIndex] : null;
+
+  // 交互式引导:监听关键状态变化,满足当前步骤的完成条件时自动推进
+  const prevKeyRef = useRef({
+    selectedId: state.selectedId,
+    placed: state.pieces.filter((p) => p.team === 'player' && p.placed).length,
+    moveLen: state.pieces.filter((p) => p.team === 'player').reduce((n, p) => n + p.path.length, 0),
+    acted: state.pieces.filter((p) => p.team === 'player' && p.acted).length,
+    phase: state.phase,
+  });
+
+  useEffect(() => {
+    const prev = prevKeyRef.current;
+    const cur = {
+      selectedId: state.selectedId,
+      placed: state.pieces.filter((p) => p.team === 'player' && p.placed).length,
+      moveLen: state.pieces.filter((p) => p.team === 'player').reduce((n, p) => n + p.path.length, 0),
+      acted: state.pieces.filter((p) => p.team === 'player' && p.acted).length,
+      phase: state.phase,
+    };
+    prevKeyRef.current = cur;
+
+    if (activeStepIndex < 0) return;
+    const step = tutorialSteps[activeStepIndex];
+    if (!step.wait || step.wait.type === 'none') return;
+
+    let done = false;
+    switch (step.wait.type) {
+      case 'select': done = !!cur.selectedId && cur.selectedId !== prev.selectedId; break;
+      case 'place': done = cur.placed > prev.placed; break;
+      case 'move': done = cur.moveLen > prev.moveLen; break;
+      case 'confirm': done = cur.acted > prev.acted; break;
+      case 'phase': done = cur.phase !== prev.phase; break;
+      default: break;
+    }
+    if (done) setTutorialStep(activeStepIndex + 1);
+  }, [state, activeStepIndex, tutorialSteps]);
 
   return (
     <>
@@ -470,6 +526,16 @@ export default function BattlePage() {
             </p>
           </div>
         </div>
+      )}
+
+      {currentStep && (
+        <TutorialOverlay
+          step={currentStep}
+          stepIndex={activeStepIndex}
+          totalSteps={tutorialSteps.length}
+          onNext={() => setTutorialStep(activeStepIndex + 1)}
+          onSkip={() => setTutorialStep(tutorialSteps.length)}
+        />
       )}
     </>
   );

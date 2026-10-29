@@ -116,6 +116,11 @@ export interface DotZone {
 export interface GameState {
   phase: Phase;
   turn: number;
+  /** 棋盘列数 / 行数(教程关卡可配置,默认 10×8) */
+  cols: number;
+  rows: number;
+  /** 中线两侧保留的空地列数(部署禁放区,教程小地图可更小) */
+  deployGap: number;
   pieces: Piece[];
   vision: string[];
   ap: number;
@@ -126,8 +131,16 @@ export interface GameState {
   lastDrawnCardId: string | null;
   /** 部署阶段玩家挑选的出战卡牌 id(每张召唤一只对应种族灵兽,并从战斗牌库中移除) */
   lineup: string[];
+  /** 出战阵容数量(默认 5,教程关卡可更少) */
+  lineupSize: number;
+  /** 是否跳过卡牌阶段(教程第 0 关无卡牌,直接进入指令阶段) */
+  skipCards: boolean;
   enemyDeck: string[];
   enemyHand: string[];
+  /** 预设敌方出战卡牌(教程关卡固定敌方阵容;为空则按常规随机) */
+  enemyLineupPreset: string[] | null;
+  /** 教程关卡敌方棋子血量覆盖(如第 0 关敌方仅 1 血) */
+  enemyHpOverride: number | null;
   dotZones: DotZone[];
   winner: Winner;
   log: LogEntry[];

@@ -1,6 +1,6 @@
 import type { GameState, Piece, PieceType, Team, Mode, TurnEvent, TurnFrame, Pt, LogSegment, AutoCommandStyle } from './types';
 import { BEASTS } from './beasts';
-import { COLS, ROWS, MID, DEPLOY_GAP, START_AP, MAX_TURNS, HAND_SIZE, MAX_HAND, LINEUP_SIZE, key, inBounds, dist, manhattan, cellName } from './constants';
+import { COLS, ROWS, DEPLOY_GAP, START_AP, MAX_TURNS, HAND_SIZE, MAX_HAND, LINEUP_SIZE, key, inBounds, dist, manhattan, cellName, midOf } from './constants';
 import { CARDS, CARDS_BY_ID } from './cards';
 import { visibleKeys, enemyVisibleKeys } from './vision';
 import { aiDeploy, aiCommand, planPath } from './ai';
@@ -86,35 +86,73 @@ function markRevealed(s: GameState) {
   }
 }
 
-export function createGame(): GameState {
+export function createGame(cols: number = COLS, rows: number = ROWS, deployGap: number = DEPLOY_GAP, lineupSize: number = LINEUP_SIZE): GameState {
   return {
-    phase: 'deploy', turn: 0, pieces: [], vision: [], ap: START_AP, enemyAp: START_AP,
+    phase: 'deploy', turn: 0, cols, rows, deployGap, lineupSize, skipCards: false, pieces: [], vision: [], ap: START_AP, enemyAp: START_AP,
     deck: shuffle(CARDS.map((c) => c.id)),
     hand: [],
     lastDrawnCardId: null,
     lineup: [],
     enemyDeck: shuffle(CARDS.map((c) => c.id)),
     enemyHand: [],
+    enemyLineupPreset: null,
+    enemyHpOverride: null,
     dotZones: [],
     winner: null, selectedId: null,
     deployTrail: [],
-    log: [{ id: ++logSeq, text: `准备阶段:从卡组中挑选 ${LINEUP_SIZE} 张卡牌出战,每张卡召唤一只对应种族的灵兽。`, team: 'player', kind: 'turn' }],
+    log: [{ id: ++logSeq, text: `准备阶段:从卡组中挑选 ${lineupSize} 张卡牌出战,每张卡召唤一只对应种族的灵兽。`, team: 'player', kind: 'turn' }],
   };
 }
 
+export interface LevelPreset {
+  cols: number;
+  rows: number;
+  deployGap: number;
+  /** 玩家固定出战卡牌(每张召唤一只对应种族灵兽) */
+  lineup: string[];
+  /** 敌方固定出战卡牌 */
+  enemyLineup: string[];
+  /** 出战数量,默认等于 lineup 长度(教程第 0 关可只有 1 只) */
+  lineupSize?: number;
+  /** 是否跳过卡牌阶段(教程第 0 关无卡牌,部署后直接进入指令阶段) */
+  skipCards?: boolean;
+  /** 敌方棋子血量覆盖(教程第 0 关敌方仅 1 血) */
+  enemyHp?: number;
+}
+
+/** 创建教程关卡:固定棋盘尺寸与双方阵容,玩家只需在部署阶段摆放位置 */
+export function createLevelGame(level: LevelPreset): GameState {
+  const size = level.lineupSize ?? level.lineup.length;
+  const s = createGame(level.cols, level.rows, level.deployGap, size);
+  s.lineup = [...level.lineup];
+  s.skipCards = !!level.skipCards;
+  s.enemyHpOverride = level.enemyHp ?? null;
+  s.pieces = level.lineup.map((id) => makePiece(CARDS_BY_ID[id].owner, 'player', id));
+  s.enemyLineupPreset = [...level.enemyLineup];
+  s.log = [{
+    id: ++logSeq,
+    text: size > 1
+      ? `准备阶段:将 ${size} 只灵兽部署到己方半场,并指定一只为灵主。`
+      : '准备阶段:将灵兽部署到己方半场。',
+    team: 'player',
+    kind: 'turn',
+  }];
+  return s;
+}
+
 /** 从卡池里均衡地挑出一套阵容(每个种族取 1 张,不足再随机补足) */
-function pickBalancedLineup(pool: string[]): string[] {
+function pickBalancedLineup(pool: string[], size: number): string[] {
   const races: PieceType[] = ['warrior', 'guardian', 'archer', 'mage', 'priest'];
   const picked: string[] = [];
   for (const race of races) {
     const arr = shuffle(pool.filter((id) => CARDS_BY_ID[id]?.owner === race));
     picked.push(...arr.slice(0, 1));
   }
-  if (picked.length < LINEUP_SIZE) {
+  if (picked.length < size) {
     const rest = shuffle(pool.filter((id) => !picked.includes(id)));
-    picked.push(...rest.slice(0, LINEUP_SIZE - picked.length));
+    picked.push(...rest.slice(0, size - picked.length));
   }
-  return picked.slice(0, LINEUP_SIZE);
+  return picked.slice(0, size);
 }
 
 /** 部署阶段:切换某张卡牌是否出战。选中的卡会召唤一只对应种族的灵兽,并从战斗牌库移除 */
@@ -139,7 +177,7 @@ export function toggleLineup(state: GameState, cardId: string): GameState {
       if (s.selectedId === target.id) s.selectedId = null;
     }
   } else {
-    if (s.lineup.length >= LINEUP_SIZE) return state;
+    if (s.lineup.length >= s.lineupSize) return state;
     s.lineup = [...s.lineup, cardId];
     s.pieces = [...s.pieces, makePiece(card.owner, 'player', cardId)];
   }
@@ -149,7 +187,7 @@ export function toggleLineup(state: GameState, cardId: string): GameState {
 /** 部署阶段:一键挑出一套均衡阵容 */
 export function randomLineup(state: GameState): GameState {
   if (state.phase !== 'deploy') return state;
-  const picked = pickBalancedLineup(state.deck);
+  const picked = pickBalancedLineup(state.deck, state.lineupSize);
   const s = clone(state);
   s.lineup = picked;
   s.deployTrail = [];
@@ -168,8 +206,8 @@ export function placePiece(state: GameState, pieceId: string, x: number, y: numb
   if (state.phase !== 'deploy') return state;
   const p = state.pieces.find((q) => q.id === pieceId);
   if (!p || p.team !== 'player') return state;
-  if (x >= MID - DEPLOY_GAP || x < 0) return state;
-  if (y < 0 || y >= ROWS) return state;
+  if (x >= midOf(state.cols) - state.deployGap || x < 0) return state;
+  if (y < 0 || y >= state.rows) return state;
   if (at(state, x, y)) return state;
   const s = clone(state);
   const np = s.pieces.find((q) => q.id === pieceId)!;
@@ -196,8 +234,8 @@ export function redeployPiece(state: GameState, pieceId: string, x: number, y: n
   if (state.phase !== 'deploy') return state;
   const p = state.pieces.find((q) => q.id === pieceId);
   if (!p || p.team !== 'player' || !p.placed) return state;
-  if (x >= MID - DEPLOY_GAP || x < 0) return state;
-  if (y < 0 || y >= ROWS) return state;
+  if (x >= midOf(state.cols) - state.deployGap || x < 0) return state;
+  if (y < 0 || y >= state.rows) return state;
   if (at(state, x, y)) return state;
   if (p.x === x && p.y === y) return state;
   const s = clone(state);
@@ -224,7 +262,9 @@ export function autoDeploy(state: GameState): GameState {
   const mine = s.pieces.filter((p) => p.team === 'player');
   mine.forEach((p) => { p.x = -1; p.y = -1; p.placed = false; p.isLord = false; });
   const slots: { x: number; y: number }[] = [];
-  for (let y = 1; y < ROWS - 1; y++) for (let x = 1; x < MID - DEPLOY_GAP; x++) slots.push({ x, y });
+  const yMin = s.rows > 1 ? 1 : 0;
+  const yMax = s.rows > 1 ? s.rows - 1 : s.rows;
+  for (let y = yMin; y < yMax; y++) for (let x = 1; x < midOf(s.cols) - s.deployGap; x++) slots.push({ x, y });
   slots.sort(() => Math.random() - 0.5);
   mine.forEach((p, i) => {
     const slot = slots[i % slots.length];
@@ -285,7 +325,7 @@ function knockback(s: GameState, p: Piece, steps: number) {
   for (let i = 0; i < steps; i++) {
     const nx = cx + dx;
     const ny = cy + dy;
-    if (!inBounds(nx, ny)) break;
+    if (!inBounds(nx, ny, s.cols, s.rows)) break;
     if (at(s, nx, ny)) break;
     cx = nx;
     cy = ny;
@@ -632,24 +672,26 @@ function aiPlayCards(state: GameState): GameState {
 export function startBattle(state: GameState): GameState {
   if (state.phase !== 'deploy') return state;
   const mine = state.pieces.filter((p) => p.team === 'player');
-  if (state.lineup.length !== LINEUP_SIZE || mine.length !== LINEUP_SIZE) return state;
+  if (state.lineup.length !== state.lineupSize || mine.length !== state.lineupSize) return state;
   if (mine.some((p) => !p.placed)) return state;
 
   const s = clone(state);
   const myPieces = s.pieces.filter((p) => p.team === 'player');
   if (!myPieces.some((p) => p.isLord)) myPieces[0].isLord = true;
 
-  // 敌方阵容:同样从卡池里挑 10 张献祭成灵兽
-  const aiLineup = pickBalancedLineup(s.enemyDeck);
+  // 敌方阵容:教程关卡用预设阵容,否则从卡池里均衡挑选
+  const aiLineup = s.enemyLineupPreset ?? pickBalancedLineup(s.enemyDeck, s.lineupSize);
   s.enemyDeck = s.enemyDeck.filter((id) => !aiLineup.includes(id));
   const enemyPieces = aiLineup.map((id) => makePiece(CARDS_BY_ID[id].owner, 'enemy', id));
+  if (s.enemyHpOverride != null) {
+    enemyPieces.forEach((p) => { p.hp = s.enemyHpOverride!; p.maxHp = s.enemyHpOverride!; });
+  }
   s.pieces = [...myPieces, ...enemyPieces];
 
   // 玩家牌库 = 20 张卡池扣掉"献祭"掉的 10 张
   s.deck = s.deck.filter((id) => !s.lineup.includes(id));
 
   aiDeploy(s);
-  s.phase = 'card1';
   s.turn = 1;
   s.ap = START_AP;
   s.enemyAp = START_AP;
@@ -658,6 +700,14 @@ export function startBattle(state: GameState): GameState {
   s.vision = [...visibleKeys(s)];
   markRevealed(s);
 
+  // 教程第 0 关:无卡牌,跳过抽卡阶段直接进入指令阶段
+  if (s.skipCards) {
+    s.phase = 'command';
+    pushLog(s, '—— 回合 1 · 指令阶段 · 为灵兽下达指令 ——', 'player', 'turn');
+    return aiCommand(s);
+  }
+
+  s.phase = 'card1';
   for (let i = 0; i < HAND_SIZE; i++) {
     drawCard(s, 'player');
     drawCard(s, 'enemy');
@@ -674,11 +724,11 @@ export function selectPiece(state: GameState, id: string | null): GameState {
 }
 
 /** 尝试把一个新的转角格加入棋子路径,返回新的完整路径;非法则返回 null */
-function extendPath(p: Piece, waypoint: Pt): Pt[] | null {
+function extendPath(p: Piece, waypoint: Pt, cols: number, rows: number): Pt[] | null {
   const anchor = p.path.length ? p.path[p.path.length - 1] : { x: p.x, y: p.y };
   if (waypoint.x === anchor.x && waypoint.y === anchor.y) return null;
   if (waypoint.x !== anchor.x && waypoint.y !== anchor.y) return null;
-  if (!inBounds(waypoint.x, waypoint.y)) return null;
+  if (!inBounds(waypoint.x, waypoint.y, cols, rows)) return null;
   const segment = manhattan(anchor.x, anchor.y, waypoint.x, waypoint.y);
   if (p.path.length + segment > p.move + p.bonusMove) return null;
   const steps: Pt[] = [...p.path];
@@ -715,7 +765,7 @@ export function command(
 
   // 添加转角格:仅规划折角路径(草稿),不消耗行动点
   if (patch.waypoint) {
-    const next = extendPath(p, patch.waypoint);
+    const next = extendPath(p, patch.waypoint, s.cols, s.rows);
     if (!next) return state;
     p.path = next;
     return s;
@@ -836,10 +886,10 @@ export function autoCommand(state: GameState, style: AutoCommandStyle = 'aggress
       a.path = d > a.range ? planPath(a, best, s, moveBudget) : [];
       a.attackTarget = best.id;
     } else if (style === 'focusLord') {
-      a.path = planPath(a, { x: COLS - 1, y: Math.floor(ROWS / 2) }, s, moveBudget);
+      a.path = planPath(a, { x: s.cols - 1, y: Math.floor(s.rows / 2) }, s, moveBudget);
       a.attackTarget = undefined;
     } else {
-      a.path = planPath(a, { x: COLS - 1, y: a.y }, s, moveBudget);
+      a.path = planPath(a, { x: s.cols - 1, y: a.y }, s, moveBudget);
       a.attackTarget = undefined;
     }
     a.mode = 'attack';
@@ -890,7 +940,7 @@ function legalMoves(s: GameState, p: Piece): Set<string> {
     let nx = anchor.x + dx;
     let ny = anchor.y + dy;
     for (let steps = 0; steps < remaining; steps++, nx += dx, ny += dy) {
-      if (!inBounds(nx, ny) || isCommandOccupied(others, nx, ny)) break;
+      if (!inBounds(nx, ny, s.cols, s.rows) || isCommandOccupied(others, nx, ny)) break;
       set.add(key(nx, ny));
     }
   };
@@ -1045,7 +1095,7 @@ export function executeTurn(input: GameState): TurnFrame[] {
 
   // 二次判定:所有棋子移动结束后,原本被堵的棋子若前方已空出,可继续前往目标位置
   // 处理「挡路的相邻棋子本回合移开后,被堵棋子仍能抵达目的地」的特殊情况
-  for (let round = 0; round < COLS + ROWS; round++) {
+  for (let round = 0; round < s.cols + s.rows; round++) {
     const retry = new Map<string, { m: (typeof movers)[number]; x: number; y: number }[]>();
     for (const m of movers) {
       if (!m.stopped || m.idx >= m.p.path.length) continue;
@@ -1249,10 +1299,10 @@ export function executeTurn(input: GameState): TurnFrame[] {
   const eLord = s.pieces.find((p) => p.team === 'enemy' && p.isLord);
   if (!pLord || !pLord.alive) {
     s.winner = 'enemy'; s.phase = 'gameover';
-    pushLog(s, '你的灵主已陨落…… 战败。', 'enemy', 'death');
+    pushLog(s, s.skipCards ? '你的灵兽被消灭…… 战败。' : '你的灵主已陨落…… 战败。', 'enemy', 'death');
   } else if (!eLord || !eLord.alive) {
     s.winner = 'player'; s.phase = 'gameover';
-    pushLog(s, '敌方灵主陨落!你赢得了圣战!', 'player', 'death');
+    pushLog(s, s.skipCards ? '敌方灵兽被消灭!你赢了!' : '敌方灵主陨落!你赢得了圣战!', 'player', 'death');
   } else {
     s.phase = 'execute';
   }
@@ -1264,7 +1314,8 @@ export function executeTurn(input: GameState): TurnFrame[] {
 }
 
 function resolveDeath(s: GameState, p: Piece, events: TurnEvent[]) {
-  if (p.isLord && !p.revived) {
+  // 教程第 0 关(无卡牌)不启用灵主重生:敌方 1 血可一击消灭
+  if (!s.skipCards && p.isLord && !p.revived) {
     p.revived = true;
     p.lordRevealed = true;
     p.hp = 1;
@@ -1318,13 +1369,21 @@ export function beginNextTurn(state: GameState): GameState {
   });
   s.dotZones = s.dotZones.map((z) => ({ ...z, turns: z.turns - 1 })).filter((z) => z.turns > 0);
 
+  s.selectedId = null;
+
+  // 教程第 0 关:无卡牌,直接进入指令阶段
+  if (s.skipCards) {
+    s.phase = 'command';
+    pushLog(s, `—— 回合 ${s.turn} · 指令阶段 · 为灵兽下达指令 ——`, 'player', 'turn');
+    return aiCommand(s);
+  }
+
   // 先清空新抽牌标记,再抽牌:牌库为空或手牌已满时不会留下上一回合的旧标记,
   // 这样「没抽到牌」就不会误触发抽卡动画。
   s.lastDrawnCardId = null;
   drawCard(s, 'player');
   drawCard(s, 'enemy');
 
-  s.selectedId = null;
   s.phase = 'card1';
   pushLog(s, `—— 回合 ${s.turn} · 抽卡阶段 ——`, 'player', 'turn');
   return aiPlayCards(s);

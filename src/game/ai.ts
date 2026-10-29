@@ -1,5 +1,5 @@
 import type { GameState, Piece, Pt } from './types';
-import { COLS, MID, ROWS, DEPLOY_GAP, dist, inBounds, key } from './constants';
+import { dist, inBounds, key, midOf } from './constants';
 
 /** AI 部署:右半场分散布置,并随机指定一只为灵主 */
 export function aiDeploy(s: GameState) {
@@ -7,7 +7,9 @@ export function aiDeploy(s: GameState) {
   mine.forEach((p) => { p.x = -1; p.y = -1; p.placed = false; p.isLord = false; });
 
   const slots: { x: number; y: number }[] = [];
-  for (let y = 1; y < ROWS - 1; y++) for (let x = MID + DEPLOY_GAP; x < COLS - 1; x++) slots.push({ x, y });
+  const yMin = s.rows > 1 ? 1 : 0;
+  const yMax = s.rows > 1 ? s.rows - 1 : s.rows;
+  for (let y = yMin; y < yMax; y++) for (let x = midOf(s.cols) + s.deployGap; x < s.cols - 1; x++) slots.push({ x, y });
   slots.sort(() => Math.random() - 0.5);
 
   mine.forEach((p, i) => {
@@ -18,7 +20,7 @@ export function aiDeploy(s: GameState) {
   });
 
   const lord = mine[Math.floor(Math.random() * mine.length)];
-  const centerSlots = slots.filter((sl) => sl.x >= COLS - 2).sort((a, b) => Math.abs(a.y - ROWS / 2) - Math.abs(b.y - ROWS / 2));
+  const centerSlots = slots.filter((sl) => sl.x >= s.cols - 2).sort((a, b) => Math.abs(a.y - s.rows / 2) - Math.abs(b.y - s.rows / 2));
   if (centerSlots[0]) {
     const occupied = mine.filter((p) => p !== lord);
     const free = centerSlots.find((sl) => !occupied.some((o) => o.x === sl.x && o.y === sl.y));
@@ -74,7 +76,7 @@ export function planPath(e: Piece, target: Pt, s: GameState, budget: number): Pt
   if (budget <= 0) return [];
 
   const blocked = (x: number, y: number) =>
-    !inBounds(x, y) ||
+    !inBounds(x, y, s.cols, s.rows) ||
     s.pieces.some((q) => q.alive && q.placed && q.id !== e.id && q.x === x && q.y === y);
 
   const startK = key(e.x, e.y);
@@ -92,7 +94,7 @@ export function planPath(e: Piece, target: Pt, s: GameState, budget: number): Pt
       const nx = cur.x + dx;
       const ny = cur.y + dy;
       const nk = key(nx, ny);
-      if (!inBounds(nx, ny) || blocked(nx, ny) || distMap.has(nk)) continue;
+      if (!inBounds(nx, ny, s.cols, s.rows) || blocked(nx, ny) || distMap.has(nk)) continue;
       distMap.set(nk, steps + 1);
       prev.set(nk, key(cur.x, cur.y));
       queue.push({ x: nx, y: ny });

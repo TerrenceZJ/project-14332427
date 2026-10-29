@@ -33,7 +33,7 @@ export default function PokerHandFan({ state, onSelectCard }: Props) {
   }
 
   return (
-    <div className="hand-fan relative w-full h-full">
+    <div className="hand-fan relative w-full h-full" data-tutorial="hand">
       {cards.map((c, i) => {
         const offset = i - center;
         const x = offset * SPACING;

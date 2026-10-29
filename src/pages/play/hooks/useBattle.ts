@@ -14,8 +14,8 @@ export interface CardTargets {
 
 export type PlaySpeed = 'normal' | 'fast';
 
-export function useBattle() {
-  const [state, setState] = useState<GameState>(() => createGame());
+export function useBattle(createInitial: () => GameState = () => createGame()) {
+  const [state, setState] = useState<GameState>(createInitial);
   const [events, setEvents] = useState<TurnEvent[]>([]);
   const [busy, setBusy] = useState(false);
   const [speed, setSpeed] = useState<PlaySpeed>('normal');
@@ -146,8 +146,8 @@ export function useBattle() {
     setBusy(false);
     framesRef.current = [];
     indexRef.current = 0;
-    setState(createGame());
-  }, []);
+    setState(createInitial());
+  }, [createInitial]);
 
   return { state, events, busy, speed, place, unplace, makeLord, redeploy, randomize, toggleLineup, randomLineup, select, start, issue, playCard, autoCommand, confirmAll, clearAllPaths, undoLastStep, advance, toggleSpeed, skipExecution, restart };
 }

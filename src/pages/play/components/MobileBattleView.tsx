@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { AutoCommandStyle, Mode, Piece } from '@/game/types';
 import type { Battle } from '@/pages/play/hooks/useBattle';
-import { LINEUP_SIZE } from '@/game/constants';
 import { BEASTS } from '@/game/beasts';
 import BattleBoard, { type BattleBoardHandle } from './BattleBoard';
 import BattleStatusBar from './BattleStatusBar';
@@ -185,10 +184,11 @@ export default function MobileBattleView({
 
   const mine = state.pieces.filter((p) => p.team === 'player');
   const reserve = mine.filter((p) => !p.placed);
-  const deployReady = mine.length === LINEUP_SIZE && reserve.length === 0 && state.lineup.length === LINEUP_SIZE;
+  const lineupSize = state.lineupSize;
+  const deployReady = mine.length === lineupSize && reserve.length === 0 && state.lineup.length === lineupSize;
   const deployHint =
-    mine.length < LINEUP_SIZE
-      ? `还需召唤 ${LINEUP_SIZE - mine.length} 只`
+    mine.length < lineupSize
+      ? `还需召唤 ${lineupSize - mine.length} 只`
       : reserve.length > 0
       ? `还需部署 ${reserve.length} 只`
       : '确认出战';
@@ -199,7 +199,7 @@ export default function MobileBattleView({
         { id: 'log', label: '日志', icon: 'ri-file-list-3-line' },
       ]
     : [
-        { id: 'hand', label: '手牌', icon: 'ri-hand-coin-line', badge: state.hand.length },
+        ...(state.skipCards ? [] : [{ id: 'hand' as Tab, label: '手牌', icon: 'ri-hand-coin-line', badge: state.hand.length }]),
         ...(isCommand ? [{ id: 'cmd' as Tab, label: '指令', icon: 'ri-magic-line' }] : []),
         { id: 'log', label: '日志', icon: 'ri-file-list-3-line' },
       ];
@@ -519,7 +519,7 @@ export default function MobileBattleView({
               <span className="shrink-0 font-heading text-xs text-foreground-950 truncate max-w-[64px]">
                 {BEASTS[selectedPiece.type].name}
               </span>
-              <div className="flex-1 min-w-0 flex items-center gap-0.5 p-0.5 rounded-full bg-background-200/70 border border-background-300/50">
+              <div className="flex-1 min-w-0 flex items-center gap-0.5 p-0.5 rounded-full bg-background-200/70 border border-background-300/50" data-tutorial="mode">
                 {(['attack', 'defend', 'scout'] as Mode[]).map((m) => (
                   <button
                     key={m}
@@ -535,6 +535,7 @@ export default function MobileBattleView({
               <button
                 onClick={() => b.issue(selectedPiece.id, { undoStep: true })}
                 disabled={selectedPiece.path.length === 0}
+                data-tutorial="undo"
                 className="shrink-0 w-7 h-7 flex items-center justify-center rounded-md border border-background-300 text-foreground-700 hover:border-primary-400 hover:text-primary-300 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 <i className="ri-arrow-go-back-line w-4 h-4 flex items-center justify-center"></i>
@@ -542,6 +543,7 @@ export default function MobileBattleView({
               <button
                 onClick={() => b.issue(selectedPiece.id, { confirm: true })}
                 disabled={state.ap < (selectedPiece.mode === 'scout' ? 2 : 1)}
+                data-tutorial="confirm"
                 className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
               >
                 <i className="ri-check-line w-3.5 h-3.5 flex items-center justify-center"></i>
@@ -553,7 +555,7 @@ export default function MobileBattleView({
       </section>
 
       {/* 底部抽屉 */}
-      <div className="shrink-0 border-t border-background-200/60 bg-background-100/95 backdrop-blur">
+      <div className="shrink-0 border-t border-background-200/60 bg-background-100/95 backdrop-blur" data-tutorial="command">
         <button
           onClick={() => setOpen((o) => !o)}
           aria-label="展开或收起面板"
@@ -628,6 +630,7 @@ export default function MobileBattleView({
             <button
               onClick={b.start}
               disabled={!deployReady}
+              data-tutorial="deploy-start"
               className="px-2.5 py-1.5 rounded-md font-label text-[11px] bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
             >
               {deployHint}
@@ -638,6 +641,7 @@ export default function MobileBattleView({
             <button
               onClick={b.advance}
               disabled={b.busy}
+              data-tutorial="end-card"
               className="px-2.5 py-1.5 rounded-md font-label text-[11px] bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
             >
               {b.busy ? '结算中…' : confirmLabel[state.phase]}

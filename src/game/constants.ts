@@ -1,6 +1,8 @@
+/** 默认棋盘尺寸(教程关卡可自定义为更小/更大的棋盘) */
 export const COLS = 10;
 export const ROWS = 8;
-export const MID = Math.floor(COLS / 2); // 左半场己方 (x < MID), 右半场敌方 (x >= MID)
+/** 中线列号:左半场己方 (x < mid), 右半场敌方 (x >= mid) */
+export const midOf = (cols: number) => Math.floor(cols / 2);
 
 /** 中线两侧各保留的空地列数:部署阶段不能在这些竖排放置棋子(中间缓冲带) */
 export const DEPLOY_GAP = 2;
@@ -15,8 +17,8 @@ export const LINEUP_SIZE = 5;
 
 export const key = (x: number, y: number) => `${x},${y}`;
 
-export const inBounds = (x: number, y: number) =>
-  x >= 0 && y >= 0 && x < COLS && y < ROWS;
+export const inBounds = (x: number, y: number, cols: number, rows: number) =>
+  x >= 0 && y >= 0 && x < cols && y < rows;
 
 /** 切比雪夫距离(八方向,用于攻击/治疗范围判定) */
 export const dist = (ax: number, ay: number, bx: number, by: number) =>

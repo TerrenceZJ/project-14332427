@@ -1,7 +1,6 @@
 import type { GameState, CardCategory } from '@/game/types';
 import { CARDS_BY_ID } from '@/game/cards';
 import { BEASTS } from '@/game/beasts';
-import { LINEUP_SIZE } from '@/game/constants';
 
 interface Props {
   state: GameState;
@@ -32,10 +31,11 @@ export default function DeployRosterPanel({
 }: Props) {
   const mine = state.pieces.filter((p) => p.team === 'player');
   const reserve = mine.filter((p) => !p.placed);
+  const lineupSize = state.lineupSize;
   const placed = mine.filter((p) => p.placed);
   const lord = placed.find((p) => p.isLord);
   const selected = mine.find((p) => p.id === state.selectedId) || null;
-  const ready = mine.length === LINEUP_SIZE && reserve.length === 0 && state.lineup.length === LINEUP_SIZE;
+  const ready = mine.length === lineupSize && reserve.length === 0 && state.lineup.length === lineupSize;
 
   return (
     <div className={`rune-border rounded-lg flex flex-col overflow-hidden ${className ?? ''}`}>
@@ -60,17 +60,21 @@ export default function DeployRosterPanel({
         </p>
 
         <div className="flex items-center justify-between mt-2 text-[10px] text-foreground-600">
-          <span>
-            {lord ? `灵主:${BEASTS[lord.type].name}` : '尚未指定灵主'}
-          </span>
+          {state.lineupSize > 1 ? (
+            <span>
+              {lord ? `灵主:${BEASTS[lord.type].name}` : '尚未指定灵主'}
+            </span>
+          ) : (
+            <span>部署灵兽</span>
+          )}
           <span className="whitespace-nowrap">
-            {placed.length}/{LINEUP_SIZE} 已部署
+            {placed.length}/{state.lineupSize} 已部署
           </span>
         </div>
         <div className="mt-1.5 h-1.5 rounded-full bg-background-200 overflow-hidden">
           <div
             className="h-full bg-gradient-to-r from-primary-500 to-accent-400 transition-all duration-300"
-            style={{ width: `${(placed.length / LINEUP_SIZE) * 100}%` }}
+            style={{ width: `${(placed.length / lineupSize) * 100}%` }}
           ></div>
         </div>
       </div>
@@ -131,13 +135,15 @@ export default function DeployRosterPanel({
       <div className="shrink-0 px-3 py-3 border-t border-background-300/60 flex flex-col gap-2">
         {selected && selected.placed && (
           <div className="flex gap-2">
-            <button
-              onClick={() => onMakeLord(selected.id)}
-              className="flex-1 px-3 py-2 rounded-md text-xs border border-primary-400/60 text-primary-300 hover:bg-primary-500/10 cursor-pointer whitespace-nowrap flex items-center justify-center gap-1"
-            >
-              <i className="ri-vip-crown-line w-3.5 h-3.5 flex items-center justify-center"></i>
-              设为灵主
-            </button>
+            {state.lineupSize > 1 && (
+              <button
+                onClick={() => onMakeLord(selected.id)}
+                className="flex-1 px-3 py-2 rounded-md text-xs border border-primary-400/60 text-primary-300 hover:bg-primary-500/10 cursor-pointer whitespace-nowrap flex items-center justify-center gap-1"
+              >
+                <i className="ri-vip-crown-line w-3.5 h-3.5 flex items-center justify-center"></i>
+                设为灵主
+              </button>
+            )}
             <button
               onClick={() => { onUnplace(selected.id); onSelect(null); }}
               className="flex-1 px-3 py-2 rounded-md text-xs border border-background-300 text-foreground-700 hover:border-secondary-400 hover:text-secondary-300 cursor-pointer whitespace-nowrap flex items-center justify-center gap-1"
@@ -168,8 +174,8 @@ export default function DeployRosterPanel({
 
         {!ready && (
           <p className="text-[10px] text-secondary-300 text-center">
-            {mine.length < LINEUP_SIZE
-              ? `还需召唤 ${LINEUP_SIZE - mine.length} 只灵兽`
+            {mine.length < lineupSize
+              ? `还需召唤 ${lineupSize - mine.length} 只灵兽`
               : `还需部署 ${reserve.length} 只灵兽`}
           </p>
         )}

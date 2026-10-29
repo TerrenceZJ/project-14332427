@@ -1,12 +1,11 @@
 import type { Piece } from '@/game/types';
-import { COLS, ROWS } from '@/game/constants';
 
 /** 棋子血条(独立渲染层,始终位于其它棋子之上,不被遮挡);血条放在格子底部内侧,不超出棋盘 */
-export default function PieceHpBar({ piece }: { piece: Piece }) {
-  const left = `${((piece.x + 0.5) / COLS) * 100}%`;
-  const top = `${((piece.y + 0.5) / ROWS) * 100}%`;
-  const cellW = 100 / COLS;
-  const cellH = 100 / ROWS;
+export default function PieceHpBar({ piece, cols, rows }: { piece: Piece; cols: number; rows: number }) {
+  const left = `${((piece.x + 0.5) / cols) * 100}%`;
+  const top = `${((piece.y + 0.5) / rows) * 100}%`;
+  const cellW = 100 / cols;
+  const cellH = 100 / rows;
 
   return (
     <div

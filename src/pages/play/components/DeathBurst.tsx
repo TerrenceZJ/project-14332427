@@ -1,5 +1,4 @@
 import type { CSSProperties } from 'react';
-import { COLS, ROWS } from '@/game/constants';
 
 /** 阵亡时朝六个方向飞散的碎片 */
 const SHARDS = [
@@ -14,14 +13,16 @@ const SHARDS = [
 interface Props {
   x: number;
   y: number;
+  cols: number;
+  rows: number;
 }
 
 /** 棋子被击杀时的碎裂 / 消散特效(暗色冲击环 + 飞散碎片 + 骷髅浮现) */
-export default function DeathBurst({ x, y }: Props) {
-  const cx = `${((x + 0.5) / COLS) * 100}%`;
-  const cy = `${((y + 0.5) / ROWS) * 100}%`;
-  const cellW = 100 / COLS;
-  const cellH = 100 / ROWS;
+export default function DeathBurst({ x, y, cols, rows }: Props) {
+  const cx = `${((x + 0.5) / cols) * 100}%`;
+  const cy = `${((y + 0.5) / rows) * 100}%`;
+  const cellW = 100 / cols;
+  const cellH = 100 / rows;
 
   return (
     <>

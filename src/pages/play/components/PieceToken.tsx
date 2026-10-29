@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Piece } from '@/game/types';
 import { BEASTS } from '@/game/beasts';
-import { COLS, ROWS } from '@/game/constants';
 import { getPieceBuffs, BUFF_TONES } from '@/game/buffs';
 import PieceAvatar from './PieceAvatar';
 
@@ -14,16 +13,19 @@ interface Props {
   faded?: boolean;
   /** 精简模式(小地图):只显示棋子圆点图标,省略血条与状态标记 */
   minimal?: boolean;
+  /** 棋盘列数 / 行数 */
+  cols: number;
+  rows: number;
 }
 
-export default function PieceToken({ piece, revealLord, selected, targetable, targeted, faded, minimal }: Props) {
+export default function PieceToken({ piece, revealLord, selected, targetable, targeted, faded, minimal, cols, rows }: Props) {
   const def = BEASTS[piece.type];
   const isPlayer = piece.team === 'player';
 
-  const left = `${((piece.x + 0.5) / COLS) * 100}%`;
-  const top = `${((piece.y + 0.5) / ROWS) * 100}%`;
-  const cellW = 100 / COLS;
-  const cellH = 100 / ROWS;
+  const left = `${((piece.x + 0.5) / cols) * 100}%`;
+  const top = `${((piece.y + 0.5) / rows) * 100}%`;
+  const cellW = 100 / cols;
+  const cellH = 100 / rows;
   const ghostColor = isPlayer ? 'oklch(var(--accent-500))' : 'oklch(var(--secondary-500))';
 
   // 位置变化 → 移动过程中显示拖尾,到达后播放落地涟漪

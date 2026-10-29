@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import type { GameState } from '@/game/types';
-import { COLS, ROWS, key } from '@/game/constants';
+import { key } from '@/game/constants';
 
 export interface MinimapView {
   left: number;
@@ -56,8 +56,8 @@ export default function BoardMinimap({ state, visible, view, onNavigate }: Props
       {/* 中线 */}
       <div className="absolute left-0 right-0 top-1/2 h-px bg-primary-500/50 -translate-y-1/2"></div>
       {/* 行列网格 */}
-      <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${COLS}, 1fr)` }}>
-        {Array.from({ length: ROWS * COLS }).map((_, i) => (
+      <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${state.cols}, 1fr)` }}>
+        {Array.from({ length: state.rows * state.cols }).map((_, i) => (
           <div key={i} className="border border-background-400/20"></div>
         ))}
       </div>
@@ -68,7 +68,7 @@ export default function BoardMinimap({ state, visible, view, onNavigate }: Props
           className={`absolute w-1.5 h-1.5 rounded-full -translate-x-1/2 -translate-y-1/2 ${
             p.team === 'player' ? 'bg-accent-500' : 'bg-secondary-500'
           }`}
-          style={{ left: `${((p.x + 0.5) / COLS) * 100}%`, top: `${((p.y + 0.5) / ROWS) * 100}%` }}
+          style={{ left: `${((p.x + 0.5) / state.cols) * 100}%`, top: `${((p.y + 0.5) / state.rows) * 100}%` }}
         ></span>
       ))}
       {/* 当前可视范围框 */}

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import type { GameState, CardCategory } from '@/game/types';
 import { CARDS_BY_ID } from '@/game/cards';
 import { BEASTS } from '@/game/beasts';
-import { LINEUP_SIZE } from '@/game/constants';
 import { useDragScroll } from '@/hooks/useDragScroll';
 import CustomScrollbar from './CustomScrollbar';
 
@@ -23,9 +22,10 @@ const META: Record<CardCategory, { label: string; text: string; bg: string; bord
 };
 
 export default function SummonDeckModal({ state, onToggleLineup, onRandomLineup, onConfirm }: Props) {
+  const lineupSize = state.lineupSize;
   const picked = state.lineup.length;
-  const full = picked >= LINEUP_SIZE;
-  const ready = picked === LINEUP_SIZE;
+  const full = picked >= lineupSize;
+  const ready = picked === lineupSize;
 
   const [count, setCount] = useState(SUMMON_SECONDS);
   const timerRef = useRef<number | null>(null);
@@ -58,7 +58,7 @@ export default function SummonDeckModal({ state, onToggleLineup, onRandomLineup,
   // 时间到:阵容未满则自动随机补足,随后直接进入布阵
   useEffect(() => {
     if (count > 0) return;
-    if (state.lineup.length < LINEUP_SIZE) onRandomLineup();
+    if (state.lineup.length < lineupSize) onRandomLineup();
     onConfirm();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [count]);
@@ -90,7 +90,7 @@ export default function SummonDeckModal({ state, onToggleLineup, onRandomLineup,
           <div className="text-right shrink-0">
             <div className="font-heading text-2xl md:text-3xl text-primary-300 leading-none">
               {picked}
-              <span className="text-foreground-500 text-base md:text-lg">/{LINEUP_SIZE}</span>
+              <span className="text-foreground-500 text-base md:text-lg">/{lineupSize}</span>
             </div>
             <div className="font-label text-[9px] text-foreground-600 mt-1">已选卡牌</div>
             <div
@@ -107,7 +107,7 @@ export default function SummonDeckModal({ state, onToggleLineup, onRandomLineup,
         <div className="mt-3 h-1.5 rounded-full bg-background-200 overflow-hidden">
           <div
             className="h-full bg-gradient-to-r from-primary-500 to-accent-400 transition-all duration-300"
-            style={{ width: `${(picked / LINEUP_SIZE) * 100}%` }}
+            style={{ width: `${(picked / lineupSize) * 100}%` }}
           ></div>
         </div>
       </div>
@@ -118,7 +118,7 @@ export default function SummonDeckModal({ state, onToggleLineup, onRandomLineup,
           <span className="font-label text-[10px] text-foreground-600 whitespace-nowrap">已选卡牌</span>
           <span className="font-heading text-xs text-primary-300">
             {picked}
-            <span className="text-foreground-500">/{LINEUP_SIZE}</span>
+            <span className="text-foreground-500">/{lineupSize}</span>
           </span>
           <span className="ml-auto font-label text-[9px] text-foreground-600 whitespace-nowrap">
             {picked === 0 ? '点击下方卡牌加入阵容' : '点击小图可取消该卡'}
@@ -131,7 +131,7 @@ export default function SummonDeckModal({ state, onToggleLineup, onRandomLineup,
             previewDragging ? 'cursor-grabbing select-none' : 'cursor-grab'
           }`}
         >
-          {Array.from({ length: LINEUP_SIZE }).map((_, i) => {
+          {Array.from({ length: lineupSize }).map((_, i) => {
             const id = state.lineup[i];
             const c = id ? CARDS_BY_ID[id] : undefined;
             if (!id || !c) {
@@ -191,7 +191,7 @@ export default function SummonDeckModal({ state, onToggleLineup, onRandomLineup,
       </div>
 
       {/* 卡牌 · 网格(上下滚动选择) */}
-      <div className="relative flex-1 min-h-0">
+      <div className="relative flex-1 min-h-0" data-tutorial="summon">
         <div
           ref={gridScrollRef}
           className="h-full overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pl-3 pr-5 md:pl-8 md:pr-10 py-3"
@@ -271,16 +271,17 @@ export default function SummonDeckModal({ state, onToggleLineup, onRandomLineup,
         <p className="flex-1 text-[10px] text-foreground-600 leading-relaxed sm:px-2">
           {ready
             ? '阵容已就绪,确认后进入布阵,把灵兽放到己方半场。'
-            : `还需挑选 ${LINEUP_SIZE - picked} 张卡牌才能确认阵容。`}
+            : `还需挑选 ${lineupSize - picked} 张卡牌才能确认阵容。`}
         </p>
 
         <button
           onClick={onConfirm}
           disabled={!ready}
+          data-tutorial="deploy-confirm"
           className="px-6 py-3 rounded-md text-sm font-label bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap flex items-center justify-center gap-2"
         >
           <i className="ri-flag-2-line w-4 h-4 flex items-center justify-center"></i>
-          确认阵容({picked}/{LINEUP_SIZE})
+          确认阵容({picked}/{lineupSize})
         </button>
       </div>
     </div>

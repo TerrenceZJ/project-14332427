@@ -2,7 +2,6 @@ import { useRef } from 'react';
 import type { GameState, CardCategory } from '@/game/types';
 import { CARDS_BY_ID } from '@/game/cards';
 import { BEASTS } from '@/game/beasts';
-import { LINEUP_SIZE } from '@/game/constants';
 import { useDragScroll } from '@/hooks/useDragScroll';
 
 interface Props {
@@ -57,7 +56,7 @@ export default function MobilePieceRail({
   }
 
   return (
-    <div className="h-full flex flex-col gap-2">
+    <div className="h-full flex flex-col gap-2" data-tutorial="piece-rail">
       {/* 棋子横滑轨道 */}
       <div
         ref={railRef}
@@ -146,14 +145,16 @@ export default function MobilePieceRail({
       <div className="shrink-0 flex flex-col gap-2">
         {selected && selected.placed && (
           <div className="flex gap-2">
-            <button
-              onClick={() => onMakeLord(selected.id)}
-              disabled={selected.isLord}
-              className="flex-1 px-3 py-2 rounded-md text-xs border border-primary-400/60 text-primary-300 hover:bg-primary-500/10 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap flex items-center justify-center gap-1"
-            >
-              <i className="ri-vip-crown-line w-3.5 h-3.5 flex items-center justify-center"></i>
-              {selected.isLord ? '当前灵主' : '设为灵主'}
-            </button>
+            {state.lineupSize > 1 && (
+              <button
+                onClick={() => onMakeLord(selected.id)}
+                disabled={selected.isLord}
+                className="flex-1 px-3 py-2 rounded-md text-xs border border-primary-400/60 text-primary-300 hover:bg-primary-500/10 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap flex items-center justify-center gap-1"
+              >
+                <i className="ri-vip-crown-line w-3.5 h-3.5 flex items-center justify-center"></i>
+                {selected.isLord ? '当前灵主' : '设为灵主'}
+              </button>
+            )}
             <button
               onClick={() => { onUnplace(selected.id); onSelect(null); }}
               className="flex-1 px-3 py-2 rounded-md text-xs border border-background-300 text-foreground-700 hover:border-secondary-400 hover:text-secondary-300 cursor-pointer whitespace-nowrap flex items-center justify-center gap-1"
@@ -166,7 +167,7 @@ export default function MobilePieceRail({
 
         <div className="flex items-center gap-2">
           <span className="font-label text-[10px] text-foreground-600 whitespace-nowrap">
-            {placedCount}/{LINEUP_SIZE} 已部署
+            {placedCount}/{state.lineupSize} 已部署
           </span>
           <button
             onClick={onRandomize}

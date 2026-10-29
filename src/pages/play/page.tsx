@@ -5,6 +5,14 @@ import TurnFlowModal from '@/pages/play/components/TurnFlowModal';
 
 const modes = [
   {
+    key: 'tutorial',
+    name: '新手训练营',
+    desc: '伪装成 PVE 关卡的引导教学，从最小战场开始掌握全部玩法。',
+    icon: 'ri-graduation-cap-line',
+    ready: true,
+    path: '/play/tutorial',
+  },
+  {
     key: 'ai',
     name: '单人 · VS AI',
     desc: '与智能对手展开一场同步指令的博弈,无需等待,随时开战。',
@@ -89,7 +97,7 @@ export default function Play() {
               </div>
               {m.ready ? (
                 <button
-                  onClick={() => navigate('/play/battle')}
+                  onClick={() => navigate(m.path ?? '/play/battle')}
                   className="shrink-0 px-4 py-2 rounded-md text-xs font-label bg-primary-500 text-background-50 hover:bg-primary-600 cursor-pointer whitespace-nowrap"
                 >
                   开始

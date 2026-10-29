@@ -2,6 +2,7 @@ import type { RouteObject } from "react-router-dom";
 import NotFound from "../pages/NotFound";
 import Play from "../pages/play/page";
 import Battle from "../pages/play/battle/page";
+import Tutorial from "../pages/play/tutorial/page";
 
 const routes: RouteObject[] = [
   {
@@ -10,6 +11,14 @@ const routes: RouteObject[] = [
   },
   {
     path: "/play/battle",
+    element: <Battle />,
+  },
+  {
+    path: "/play/tutorial",
+    element: <Tutorial />,
+  },
+  {
+    path: "/play/tutorial/:levelId",
     element: <Battle />,
   },
   {

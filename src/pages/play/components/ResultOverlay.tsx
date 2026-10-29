@@ -12,6 +12,7 @@ export default function ResultOverlay({ state, onRestart, onLobby }: Props) {
 
   const win = state.winner === 'player';
   const draw = state.winner === 'draw';
+  const tutorial = state.skipCards;
 
   const survived = state.pieces.filter((p) => p.team === 'player' && p.alive && p.placed);
   const slain = state.pieces.filter((p) => p.team === 'enemy' && !p.alive);
@@ -33,14 +34,16 @@ export default function ResultOverlay({ state, onRestart, onLobby }: Props) {
         </div>
 
         <h2 className="font-heading text-4xl text-foreground-950 mb-2">
-          {win ? '王座加冕' : draw ? '势均力敌' : '灵主陨落'}
+          {tutorial ? (win ? '胜利' : draw ? '平局' : '战败') : (win ? '王座加冕' : draw ? '势均力敌' : '灵主陨落')}
         </h2>
         <p className="text-sm text-foreground-700 mb-7">
-          {win
-            ? '你击败了敌方灵主,赢得了这场圣战!'
-            : draw
-            ? '双方灵主血量相同,本局以平局收场。'
-            : '你的灵主再次陨落…… 王座暂时旁落。'}
+          {tutorial
+            ? (win ? '你击败了敌方，成功过关！' : draw ? '本局以平局收场。' : '你的灵兽被消灭…… 再试一次吧。')
+            : (win
+              ? '你击败了敌方灵主,赢得了这场圣战!'
+              : draw
+              ? '双方灵主血量相同,本局以平局收场。'
+              : '你的灵主再次陨落…… 王座暂时旁落。')}
         </p>
 
         <div className="grid grid-cols-2 gap-3 mb-4">
@@ -63,8 +66,8 @@ export default function ResultOverlay({ state, onRestart, onLobby }: Props) {
         </div>
 
         <div className="flex flex-wrap justify-center gap-2 mb-6 text-[11px] text-foreground-700">
-          {pLord && <span className="px-2.5 py-1 rounded-full bg-accent-500/10 border border-accent-500/30">己方灵主:{BEASTS[pLord.type].name} · {pLord.alive ? `${pLord.hp}血` : '阵亡'}</span>}
-          {eLord && <span className="px-2.5 py-1 rounded-full bg-secondary-500/10 border border-secondary-500/30">敌方灵主:{BEASTS[eLord.type].name} · {eLord.alive ? `${eLord.hp}血` : '阵亡'}</span>}
+          {!tutorial && pLord && <span className="px-2.5 py-1 rounded-full bg-accent-500/10 border border-accent-500/30">己方灵主:{BEASTS[pLord.type].name} · {pLord.alive ? `${pLord.hp}血` : '阵亡'}</span>}
+          {!tutorial && eLord && <span className="px-2.5 py-1 rounded-full bg-secondary-500/10 border border-secondary-500/30">敌方灵主:{BEASTS[eLord.type].name} · {eLord.alive ? `${eLord.hp}血` : '阵亡'}</span>}
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3">

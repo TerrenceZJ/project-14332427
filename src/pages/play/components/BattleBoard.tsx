@@ -1,6 +1,6 @@
 import { Fragment, forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { GameState, Piece, TurnEvent } from '@/game/types';
-import { COLS, ROWS, MID, DEPLOY_GAP, key, dist } from '@/game/constants';
+import { key, dist, midOf } from '@/game/constants';
 import PieceToken from './PieceToken';
 import PieceHpBar from './PieceHpBar';
 import DeployTrail from './DeployTrail';
@@ -40,8 +40,12 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
   const viewportRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  const CELL_PCT_X = 100 / COLS;
-  const CELL_PCT_Y = 100 / ROWS;
+  const cols = state.cols;
+  const rows = state.rows;
+  const mid = midOf(cols);
+
+  const CELL_PCT_X = 100 / cols;
+  const CELL_PCT_Y = 100 / rows;
 
   const [vp, setVp] = useState({ w: 0, h: 0 });
   const [scale, setScaleState] = useState(1);
@@ -58,16 +62,26 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
   const MIN_SCALE = 1;
   const MAX_SCALE = 2.5;
 
-  // 棋盘高度铺满视口,宽度按 10:8 比例推导,保证格子为正方形
-  const boardH = vp.h * scale;
-  const boardW = boardH * (COLS / ROWS);
+  // 横向地图(宽高比 >= 2):格子放大并垂直居中,横向可滚动
+  const isWide = cols / rows >= 2;
+
+  // 棋盘尺寸:横向地图用放大后的格子;否则高度铺满,保证格子为正方形
+  const computeBoard = (s: number, vw: number, vh: number) => {
+    const aspect = cols / rows;
+    if (isWide) {
+      const cell = Math.max(vw / cols, 116) * s;
+      return { w: cell * cols, h: cell * rows };
+    }
+    const h = vh * s;
+    return { w: h * aspect, h };
+  };
+  const { w: boardW, h: boardH } = computeBoard(scale, vp.w, vp.h);
 
   const computeMaxPan = () => {
-    const boardHNow = vpRef.current.h * scaleRef.current;
-    const boardWNow = boardHNow * (COLS / ROWS);
+    const { w: boardWNow, h: boardHNow } = computeBoard(scaleRef.current, vpRef.current.w, vpRef.current.h);
     return {
       x: Math.max(0, boardWNow - vpRef.current.w),
-      y: Math.max(0, boardHNow - vpRef.current.h) + bottomOverlayRef.current,
+      y: isWide ? 0 : Math.max(0, boardHNow - vpRef.current.h) + bottomOverlayRef.current,
     };
   };
 
@@ -97,15 +111,13 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
     const clamped = Math.min(MAX_SCALE, Math.max(MIN_SCALE, next));
     if (clamped === scaleRef.current) return;
     const { w, h } = vpRef.current;
-    const prevBoardH = h * scaleRef.current;
-    const prevBoardW = prevBoardH * (COLS / ROWS);
-    const nextBoardH = h * clamped;
-    const nextBoardW = nextBoardH * (COLS / ROWS);
+    const prevBoard = computeBoard(scaleRef.current, w, h);
+    const nextBoard = computeBoard(clamped, w, h);
     // 以视口中心为锚点缩放,保持画面中心不变
     const cx = w / 2 - offsetRef.current.x;
     const cy = h / 2 - offsetRef.current.y;
-    const nx = prevBoardW > 0 ? w / 2 - (cx * nextBoardW) / prevBoardW : 0;
-    const ny = prevBoardH > 0 ? h / 2 - (cy * nextBoardH) / prevBoardH : 0;
+    const nx = prevBoard.w > 0 ? w / 2 - (cx * nextBoard.w) / prevBoard.w : 0;
+    const ny = prevBoard.h > 0 ? h / 2 - (cy * nextBoard.h) / prevBoard.h : 0;
     scaleRef.current = clamped;
     setScaleState(clamped);
     updateOffset(nx, ny);
@@ -117,11 +129,15 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
 
   const centerOn = (x: number, y: number) => {
     const { w, h } = vpRef.current;
-    const boardHNow = h * scaleRef.current;
-    const boardWNow = boardHNow * (COLS / ROWS);
-    const cx = ((x + 0.5) / COLS) * boardWNow;
-    const cy = ((y + 0.5) / ROWS) * boardHNow;
+    const { w: boardWNow, h: boardHNow } = computeBoard(scaleRef.current, w, h);
+    const cx = ((x + 0.5) / cols) * boardWNow;
+    const cy = ((y + 0.5) / rows) * boardHNow;
     const overlay = bottomOverlayRef.current;
+    // 横向地图纵向已居中,只做横向居中
+    if (isWide) {
+      updateOffset(w / 2 - cx, 0);
+      return;
+    }
     // 可见区域 = 视口去掉底部面板遮挡后的高度
     const visibleH = Math.max(1, h - overlay);
     // 纵向居中到可见区域中心,但最多滚动到「棋盘底部贴齐面板顶部」,不露出空隙
@@ -151,6 +167,7 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
     };
     offsetRef.current = c;
     setOffset(c);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bottomOverlay]);
 
   useEffect(() => {
@@ -218,20 +235,18 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
     const el = contentRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const vpRect = viewportRef.current?.getBoundingClientRect();
-    if (!vpRect) return;
-    const relX = e.clientX - vpRect.left - offsetRef.current.x;
-    const relY = e.clientY - vpRect.top - offsetRef.current.y;
-    const x = Math.floor((relX / rect.width) * COLS);
-    const y = Math.floor((relY / rect.height) * ROWS);
-    if (x >= 0 && y >= 0 && x < COLS && y < ROWS) onCellClick(x, y);
+    const relX = e.clientX - rect.left;
+    const relY = e.clientY - rect.top;
+    const x = Math.floor((relX / rect.width) * cols);
+    const y = Math.floor((relY / rect.height) * rows);
+    if (x >= 0 && y >= 0 && x < cols && y < rows) onCellClick(x, y);
   };
 
   const isExecute = state.phase === 'execute';
   const playerPieces = state.pieces.filter(p => p.team === 'player' && p.alive && p.placed);
   const enemyPieces = state.pieces.filter(p => p.team === 'enemy' && p.alive && p.placed && visible.has(key(p.x, p.y)));
 
-  const cells = Array.from({ length: ROWS * COLS });
+  const cells = Array.from({ length: rows * cols });
   const shownPieces = state.pieces.filter(
     (p) => p.alive && p.placed && (p.team === 'player' || visible.has(key(p.x, p.y)))
   );
@@ -273,7 +288,7 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
     : [];
 
   const cellStyle = (x: number, y: number) => {
-    const isPlayerSide = x < MID;
+    const isPlayerSide = x < mid;
     const fog = !isPlayerSide && !visible.has(key(x, y));
     const isMove = moveCells.has(key(x, y));
     const isRange = !isMove && rangeCells.has(key(x, y));
@@ -296,6 +311,7 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         onPointerLeave={(e) => endDrag(e)}
+        data-tutorial="board"
         className={`absolute inset-0 overflow-hidden rounded-lg border border-background-300/60 bg-background-200/40 cursor-grab ${
           dragging ? 'cursor-grabbing' : ''
         }`}
@@ -308,17 +324,17 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
             width: boardW > 0 ? `${boardW}px` : '100%',
             height: boardH > 0 ? `${boardH}px` : '100%',
             left: `${offset.x}px`,
-            top: `${offset.y}px`,
+            top: `${offset.y + (isWide ? (vp.h - boardH) / 2 : 0)}px`,
           }}
         >
           {/* 网格层 */}
           <div
             className="absolute inset-0 grid board-grass"
-            style={{ gridTemplateColumns: `repeat(${COLS}, 1fr)`, gridTemplateRows: `repeat(${ROWS}, 1fr)` }}
+            style={{ gridTemplateColumns: `repeat(${cols}, 1fr)`, gridTemplateRows: `repeat(${rows}, 1fr)` }}
           >
             {cells.map((_, i) => {
-              const x = i % COLS;
-              const y = Math.floor(i / COLS);
+              const x = i % cols;
+              const y = Math.floor(i / cols);
               const k = key(x, y);
               const isMove = moveCells.has(k);
               const isRange = !isMove && rangeCells.has(k);
@@ -344,10 +360,10 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
             <div
               className="absolute deploy-restrict pointer-events-none"
               style={{
-                left: `${((MID - DEPLOY_GAP) / COLS) * 100}%`,
+                left: `${((mid - state.deployGap) / cols) * 100}%`,
                 top: 0,
                 bottom: 0,
-                width: `${((DEPLOY_GAP * 2) / COLS) * 100}%`,
+                width: `${((state.deployGap * 2) / cols) * 100}%`,
                 zIndex: 3,
               }}
             >
@@ -361,23 +377,23 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
           {/* 中线 */}
           <div
             className="absolute top-0 bottom-0 w-[2px] bg-primary-500/40"
-            style={{ left: `${(MID / COLS) * 100}%`, zIndex: 6 }}
+            style={{ left: `${(mid / cols) * 100}%`, zIndex: 6 }}
           ></div>
 
           {/* 敌方侧薄云层 */}
           <div
             className="absolute board-clouds pointer-events-none"
             style={{
-              left: `${(MID / COLS) * 100}%`,
+              left: `${(mid / cols) * 100}%`,
               top: 0,
               bottom: 0,
-              width: `${((COLS - MID) / COLS) * 100}%`,
+              width: `${((cols - mid) / cols) * 100}%`,
               zIndex: 4,
             }}
           ></div>
 
           {/* 部署轨迹 */}
-          {state.phase === 'deploy' && <DeployTrail trail={state.deployTrail} />}
+          {state.phase === 'deploy' && <DeployTrail trail={state.deployTrail} cols={cols} rows={rows} />}
 
           {/* 持续性伤害区域 */}
           {state.dotZones.map((z) => (
@@ -385,10 +401,10 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
               key={z.id}
               className="absolute pointer-events-none bg-secondary-500/15 border border-secondary-400/40"
               style={{
-                left: `${((z.x - 1) / COLS) * 100}%`,
-                top: `${((z.y - 1) / ROWS) * 100}%`,
-                width: `${(3 / COLS) * 100}%`,
-                height: `${(3 / ROWS) * 100}%`,
+                left: `${((z.x - 1) / cols) * 100}%`,
+                top: `${((z.y - 1) / rows) * 100}%`,
+                width: `${(3 / cols) * 100}%`,
+                height: `${(3 / rows) * 100}%`,
                 zIndex: 6,
               }}
             ></div>
@@ -399,10 +415,10 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
             <div
               className="absolute pointer-events-none bg-primary-500/20 border-2 border-primary-400/80 animate-pulse"
               style={{
-                left: `${((previewCell.x - 1) / COLS) * 100}%`,
-                top: `${((previewCell.y - 1) / ROWS) * 100}%`,
-                width: `${(3 / COLS) * 100}%`,
-                height: `${(3 / ROWS) * 100}%`,
+                left: `${((previewCell.x - 1) / cols) * 100}%`,
+                top: `${((previewCell.y - 1) / rows) * 100}%`,
+                width: `${(3 / cols) * 100}%`,
+                height: `${(3 / rows) * 100}%`,
                 zIndex: 7,
               }}
             ></div>
@@ -416,8 +432,8 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
                 key={`dest-${p.id}`}
                 className="absolute pointer-events-none border-2 border-dashed border-primary-400/70 bg-primary-500/10 rounded-md"
                 style={{
-                  left: `${(dest.x / COLS) * 100}%`,
-                  top: `${(dest.y / ROWS) * 100}%`,
+                  left: `${(dest.x / cols) * 100}%`,
+                  top: `${(dest.y / rows) * 100}%`,
                   width: `${CELL_PCT_X}%`,
                   height: `${CELL_PCT_Y}%`,
                   zIndex: 7,
@@ -433,10 +449,10 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
               <Fragment key={`line-${p.id}`}>
                 {pts.slice(0, -1).map((a, i) => {
                   const b = pts[i + 1];
-                  const ax = ((a.x + 0.5) / COLS) * 100;
-                  const ay = ((a.y + 0.5) / ROWS) * 100;
-                  const bx = ((b.x + 0.5) / COLS) * 100;
-                  const by = ((b.y + 0.5) / ROWS) * 100;
+                  const ax = ((a.x + 0.5) / cols) * 100;
+                  const ay = ((a.y + 0.5) / rows) * 100;
+                  const bx = ((b.x + 0.5) / cols) * 100;
+                  const by = ((b.y + 0.5) / rows) * 100;
                   const dx = bx - ax;
                   const dy = by - ay;
                   const len = Math.sqrt(dx * dx + dy * dy);
@@ -467,8 +483,8 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
                   key={`step-${p.id}-${i}`}
                   className="absolute pointer-events-none flex items-center justify-center"
                   style={{
-                    left: `${(c.x / COLS) * 100}%`,
-                    top: `${(c.y / ROWS) * 100}%`,
+                    left: `${(c.x / cols) * 100}%`,
+                    top: `${(c.y / rows) * 100}%`,
                     width: `${CELL_PCT_X}%`,
                     height: `${CELL_PCT_Y}%`,
                     zIndex: 9,
@@ -487,17 +503,19 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
             <PieceToken
               key={p.id}
               piece={p}
-              revealLord={p.team === 'player' || p.lordRevealed}
+                revealLord={state.skipCards ? p.lordRevealed : p.team === 'player' || p.lordRevealed}
               selected={p.id === selectedId}
               targetable={targetPieceIds.has(p.id)}
               targeted={selectedTargetIds.has(p.id)}
               faded={(state.phase === 'command') && p.team === 'player' && p.path.length > 0}
+              cols={cols}
+              rows={rows}
             />
           ))}
 
           {/* 血条层:独立于棋子,始终位于最上方 */}
           {shownPieces.map((p) => (
-            <PieceHpBar key={`hp-${p.id}`} piece={p} />
+            <PieceHpBar key={`hp-${p.id}`} piece={p} cols={cols} rows={rows} />
           ))}
 
           {/* 指令阶段:已锁定的攻击 / 治疗目标(连线 + 目标标记) */}
@@ -519,9 +537,9 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
                 <div
                   className="absolute pointer-events-none"
                   style={{
-                    left: `${(((ax + bx) / 2) / COLS) * 100}%`,
-                    top: `${(((ay + by) / 2) / ROWS) * 100}%`,
-                    width: `${(len / COLS) * 100}%`,
+                    left: `${(((ax + bx) / 2) / cols) * 100}%`,
+                    top: `${(((ay + by) / 2) / rows) * 100}%`,
+                    width: `${(len / cols) * 100}%`,
                     borderTop: `2px ${isAuto ? 'dotted' : isHeal ? 'dashed' : 'solid'} ${lineColor}`,
                     transform: `translate(-50%, -50%) rotate(${angle}rad)`,
                     zIndex: 24,
@@ -530,8 +548,8 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
                 <div
                   className="absolute pointer-events-none"
                   style={{
-                    left: `${(ct.to.x / COLS) * 100}%`,
-                    top: `${(ct.to.y / ROWS) * 100}%`,
+                    left: `${(ct.to.x / cols) * 100}%`,
+                    top: `${(ct.to.y / rows) * 100}%`,
                     width: `${CELL_PCT_X}%`,
                     height: `${CELL_PCT_Y}%`,
                     zIndex: 50,
@@ -557,10 +575,10 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
           {events.map((ev, i) => {
             if (ev.type === 'attack') {
               const hasFrom = ev.fx !== undefined && ev.fy !== undefined;
-              const ax = ((ev.fx ?? ev.x) + 0.5) / COLS * 100;
-              const ay = ((ev.fy ?? ev.y) + 0.5) / ROWS * 100;
-              const bx = (ev.x + 0.5) / COLS * 100;
-              const by = (ev.y + 0.5) / ROWS * 100;
+              const ax = ((ev.fx ?? ev.x) + 0.5) / cols * 100;
+              const ay = ((ev.fy ?? ev.y) + 0.5) / rows * 100;
+              const bx = (ev.x + 0.5) / cols * 100;
+              const by = (ev.y + 0.5) / rows * 100;
               const isPlayerAttack = state.pieces.some(p => p.x === ev.fx && p.y === ev.fy && p.team === 'player');
               const lineColor = isPlayerAttack ? 'oklch(var(--accent-400))' : 'oklch(var(--secondary-400))';
 
@@ -620,8 +638,8 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
                   <div
                     className="absolute pointer-events-none hit-burst rounded-full border-2 border-accent-300/80"
                     style={{
-                      left: `${((ev.x + 0.5) / COLS) * 100}%`,
-                      top: `${((ev.y + 0.5) / ROWS) * 100}%`,
+                      left: `${((ev.x + 0.5) / cols) * 100}%`,
+                      top: `${((ev.y + 0.5) / rows) * 100}%`,
                       width: `${CELL_PCT_X * 1.3}%`,
                       height: `${CELL_PCT_Y * 1.3}%`,
                       zIndex: 38,
@@ -631,8 +649,8 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
                   <div
                     className="absolute pointer-events-none font-heading text-sm font-bold text-accent-300 dmg-float"
                     style={{
-                      left: `${((ev.x + 0.5) / COLS) * 100}%`,
-                      top: `${((ev.y + 0.5) / ROWS) * 100}%`,
+                      left: `${((ev.x + 0.5) / cols) * 100}%`,
+                      top: `${((ev.y + 0.5) / rows) * 100}%`,
                       zIndex: 40,
                       textShadow: '0 1px 3px rgba(0,0,0,0.6)',
                       transform: 'translate(-50%, -160%)',
@@ -644,7 +662,7 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
               );
             }
             if (ev.type === 'death') {
-              return <DeathBurst key={`death-${i}`} x={ev.x} y={ev.y} />;
+              return <DeathBurst key={`death-${i}`} x={ev.x} y={ev.y} cols={cols} rows={rows} />;
             }
             if (ev.text) {
               return (
@@ -652,8 +670,8 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
                   key={`text-${i}`}
                   className="absolute pointer-events-none font-heading text-xs px-2 py-1 rounded bg-primary-500 text-background-50 whitespace-nowrap"
                   style={{
-                    left: `${((ev.x + 0.5) / COLS) * 100}%`,
-                    top: `${((ev.y + 0.5) / ROWS) * 100}%`,
+                    left: `${((ev.x + 0.5) / cols) * 100}%`,
+                    top: `${((ev.y + 0.5) / rows) * 100}%`,
                     transform: 'translate(-50%, -160%)',
                     zIndex: 41,
                   }}
@@ -673,7 +691,7 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
           className="absolute right-2 bottom-2 border-2 border-secondary-500 rounded-lg overflow-hidden shadow-xl"
           style={{
             width: '38%',
-            aspectRatio: `${COLS}/${ROWS}`,
+            aspectRatio: `${cols}/${rows}`,
             zIndex: 10,
           }}
         >
@@ -681,13 +699,13 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
             {/* 敌方视角网格 */}
             <div
               className="absolute inset-0 grid"
-              style={{ gridTemplateColumns: `repeat(${COLS}, 1fr)`, gridTemplateRows: `repeat(${ROWS}, 1fr)` }}
+              style={{ gridTemplateColumns: `repeat(${cols}, 1fr)`, gridTemplateRows: `repeat(${rows}, 1fr)` }}
             >
               {cells.map((_, i) => {
-                const x = i % COLS;
-                const y = Math.floor(i / COLS);
+                const x = i % cols;
+                const y = Math.floor(i / cols);
                 const checker = (x + y) % 2 === 0;
-                const isPlayerSide = x < MID;
+                const isPlayerSide = x < mid;
                     return (
                       <div
                         key={i}
@@ -700,7 +718,7 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
             {/* 中线 */}
             <div
               className="absolute top-0 bottom-0 w-[2px] bg-secondary-500/60"
-              style={{ left: `${(MID / COLS) * 100}%` }}
+              style={{ left: `${(mid / cols) * 100}%` }}
             ></div>
 
             {/* 双方棋子(蓝=己方 / 红=敌方) */}
@@ -708,11 +726,13 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
               <PieceToken
                 key={p.id}
                 piece={p}
-                revealLord={p.team === 'player' || p.lordRevealed}
+              revealLord={state.skipCards ? p.lordRevealed : p.team === 'player' || p.lordRevealed}
                 selected={false}
                 targetable={false}
                 faded={false}
                 minimal
+                cols={cols}
+                rows={rows}
               />
             ))}
 
@@ -722,10 +742,10 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
                 key={z.id}
                 className="absolute pointer-events-none bg-secondary-500/20 border border-secondary-400/50"
                 style={{
-                  left: `${((z.x - 1) / COLS) * 100}%`,
-                  top: `${((z.y - 1) / ROWS) * 100}%`,
-                  width: `${(3 / COLS) * 100}%`,
-                  height: `${(3 / ROWS) * 100}%`,
+                  left: `${((z.x - 1) / cols) * 100}%`,
+                  top: `${((z.y - 1) / rows) * 100}%`,
+                  width: `${(3 / cols) * 100}%`,
+                  height: `${(3 / rows) * 100}%`,
                   zIndex: 6,
                 }}
               ></div>
@@ -733,16 +753,16 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
 
             {/* 敌方死亡效果 */}
             {events.filter(ev => ev.type === 'death').map((ev, i) => (
-              <DeathBurst key={`death-sup-${i}`} x={ev.x} y={ev.y} />
+              <DeathBurst key={`death-sup-${i}`} x={ev.x} y={ev.y} cols={cols} rows={rows} />
             ))}
 
             {/* 攻击弹道 + 命中效果 */}
             {events.filter(ev => ev.type === 'attack').map((ev, i) => {
               const hasFrom = ev.fx !== undefined && ev.fy !== undefined;
-              const ax = ((ev.fx ?? ev.x) + 0.5) / COLS * 100;
-              const ay = ((ev.fy ?? ev.y) + 0.5) / ROWS * 100;
-              const bx = (ev.x + 0.5) / COLS * 100;
-              const by = (ev.y + 0.5) / ROWS * 100;
+              const ax = ((ev.fx ?? ev.x) + 0.5) / cols * 100;
+              const ay = ((ev.fy ?? ev.y) + 0.5) / rows * 100;
+              const bx = (ev.x + 0.5) / cols * 100;
+              const by = (ev.y + 0.5) / rows * 100;
               const isPlayerAttack = state.pieces.some(p => p.x === ev.fx && p.y === ev.fy && p.team === 'player');
               const lineColor = isPlayerAttack ? 'oklch(var(--accent-400))' : 'oklch(var(--secondary-400))';
               return (
