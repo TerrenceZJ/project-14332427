@@ -12,6 +12,8 @@ export interface BattleBoardHandle {
   resetView: () => void;
   /** 将指定格子平移到视口中心(选中棋子时自动居中) */
   centerOn: (x: number, y: number) => void;
+  /** 将棋盘滚到底(棋盘底部贴齐面板/状态条顶部),露出被遮挡的底部区域 */
+  revealBottom: () => void;
 }
 
 interface Props {
@@ -119,7 +121,17 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
     const boardWNow = boardHNow * (COLS / ROWS);
     const cx = ((x + 0.5) / COLS) * boardWNow;
     const cy = ((y + 0.5) / ROWS) * boardHNow;
-    updateOffset(w / 2 - cx, h / 2 - cy);
+    const overlay = bottomOverlayRef.current;
+    // 可见区域 = 视口去掉底部面板遮挡后的高度
+    const visibleH = Math.max(1, h - overlay);
+    // 纵向居中到可见区域中心,但最多滚动到「棋盘底部贴齐面板顶部」,不露出空隙
+    updateOffset(w / 2 - cx, visibleH / 2 - cy);
+  };
+
+  const revealBottom = () => {
+    const m = computeMaxPan();
+    offsetRef.current = { x: offsetRef.current.x, y: -m.y };
+    setOffset({ x: offsetRef.current.x, y: -m.y });
   };
 
   useImperativeHandle(ref, () => ({
@@ -127,14 +139,18 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
     zoomOut,
     resetView,
     centerOn,
+    revealBottom,
   }), []);
 
   useEffect(() => {
     bottomOverlayRef.current = bottomOverlay;
-    const c = clampOffset(offsetRef.current.x, offsetRef.current.y);
+    const m = computeMaxPan();
+    const c = {
+      x: Math.min(0, Math.max(-m.x, offsetRef.current.x)),
+      y: Math.min(0, Math.max(-m.y, offsetRef.current.y)),
+    };
     offsetRef.current = c;
     setOffset(c);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bottomOverlay]);
 
   useEffect(() => {

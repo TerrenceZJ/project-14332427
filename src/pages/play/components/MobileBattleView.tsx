@@ -34,7 +34,7 @@ const phaseLabel: Record<string, string> = {
 
 const confirmLabel: Record<string, string> = {
   card1: '结束抽卡 · 下指令',
-  command: '结束指令 · 用卡牌',
+  command: '结束指令 · 战斗',
   card2: '结束 · 同步执行',
 };
 
@@ -102,6 +102,8 @@ export default function MobileBattleView({
   const overlayRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<BattleBoardHandle>(null);
   const [overlayH, setOverlayH] = useState(0);
+  const actionBarRef = useRef<HTMLDivElement>(null);
+  const [actionBarH, setActionBarH] = useState(0);
 
   const isDeploy = state.phase === 'deploy';
   const isCommand = state.phase === 'command';
@@ -247,17 +249,32 @@ export default function MobileBattleView({
   }, [isCommand, selectedPiece]);
 
   // 点击选中棋子时,自动将其平移到棋盘视口中心
+  // 指令阶段选中棋子会自动展开面板,需等面板高度测量完成后(overlayH)再居中,
+  // 否则 bottomOverlay 尚未生效,纵向平移被钳制,棋子无法居中。
   const lastCenteredRef = useRef<string | null>(null);
+  const pendingCenterRef = useRef<string | null>(null);
+
   useEffect(() => {
     const piece = selectedPiece;
     if (!piece) {
       lastCenteredRef.current = null;
+      pendingCenterRef.current = null;
       return;
     }
     if (lastCenteredRef.current === piece.id) return;
+    pendingCenterRef.current = piece.id;
+  }, [selectedPiece]);
+
+  useEffect(() => {
+    const pid = pendingCenterRef.current;
+    if (!pid) return;
+    const piece = selectedPiece;
+    if (!piece || piece.id !== pid) return;
+    if (isCommand && (!open || overlayH === 0)) return;
+    pendingCenterRef.current = null;
     lastCenteredRef.current = piece.id;
     boardRef.current?.centerOn(piece.x, piece.y);
-  }, [selectedPiece]);
+  }, [selectedPiece, isCommand, open, overlayH]);
 
   // 阶段切换后,若当前标签已不属于本阶段(例如离开指令阶段后仍停在「指令」),回退到「手牌」
   const validTab: Tab = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
@@ -265,6 +282,8 @@ export default function MobileBattleView({
   // 底部弹出面板(手牌 / 指令 / 日志)遮挡棋盘的高度,用于让棋盘可向上平移
   const overlayOpen = validTab !== 'piece' && open;
   const isCmdPiece = validTab === 'cmd' && !!selectedPiece;
+  // 指令阶段面板收起后显示的精简操作条(模式 / 撤销 / 确认),同样会遮挡棋盘底部
+  const actionBarVisible = isCommand && !!selectedPiece && !open && !selectedPiece.acted;
 
   // 实测弹出面板高度,作为棋盘可向上平移的余量(面板展开后内容完整展示,不再需要内部滚动)
   useEffect(() => {
@@ -280,6 +299,34 @@ export default function MobileBattleView({
     ro.observe(el);
     return () => ro.disconnect();
   }, [overlayOpen, validTab, isCmdPiece]);
+
+  // 实测精简操作条高度(同样计入棋盘可向上平移的余量)
+  useEffect(() => {
+    if (!actionBarVisible) {
+      setActionBarH(0);
+      return;
+    }
+    const el = actionBarRef.current;
+    if (!el) return;
+    const update = () => setActionBarH(el.offsetHeight);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [actionBarVisible]);
+
+  // 精简操作条出现(指令阶段开始规划移动)时,等高度测量完成后把棋盘滚到底,露出被挡住的底部格子
+  const prevActionBarRef = useRef(false);
+  useEffect(() => {
+    if (!actionBarVisible) {
+      prevActionBarRef.current = false;
+      return;
+    }
+    if (prevActionBarRef.current) return;
+    if (actionBarH === 0) return;
+    prevActionBarRef.current = true;
+    boardRef.current?.revealBottom();
+  }, [actionBarVisible, actionBarH]);
 
 
   const pickTab = (t: Tab) => {
@@ -435,7 +482,7 @@ export default function MobileBattleView({
           selectedTargetIds={selectedTargetIds}
           events={b.events}
           onCellClick={onCell}
-          bottomOverlay={overlayH}
+          bottomOverlay={overlayH + actionBarH}
           previewCell={previewCell}
         />
 
@@ -464,7 +511,7 @@ export default function MobileBattleView({
 
         {/* 指令阶段:面板收起后,选中棋子显示精简操作条(模式 / 撤销 / 确认),无需反复展开 */}
         {isCommand && selectedPiece && !open && !selectedPiece.acted && (
-          <div className="absolute left-0 right-0 bottom-0 z-[45] px-2 pb-2">
+          <div ref={actionBarRef} className="absolute left-0 right-0 bottom-0 z-[45] px-2 pb-2">
             <div className="flex items-center gap-1.5 rounded-xl border border-background-300 bg-background-100/95 backdrop-blur px-2 py-1.5 shadow-lg">
               <span className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md bg-accent-500/15 border border-accent-500/40 text-accent-300">
                 <i className={`${BEASTS[selectedPiece.type].icon} text-sm w-4 h-4 flex items-center justify-center`}></i>

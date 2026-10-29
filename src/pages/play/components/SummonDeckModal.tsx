@@ -4,6 +4,7 @@ import { CARDS_BY_ID } from '@/game/cards';
 import { BEASTS } from '@/game/beasts';
 import { LINEUP_SIZE } from '@/game/constants';
 import { useDragScroll } from '@/hooks/useDragScroll';
+import CustomScrollbar from './CustomScrollbar';
 
 /** 召唤出战卡牌(阵容挑选)限时 2 分钟 */
 const SUMMON_SECONDS = 120;
@@ -34,6 +35,7 @@ export default function SummonDeckModal({ state, onToggleLineup, onRandomLineup,
 
   // 已选卡牌迷你预览带:横向拖动
   const previewRef = useRef<HTMLDivElement>(null);
+  const gridScrollRef = useRef<HTMLDivElement>(null);
   const {
     dragging: previewDragging,
     consumeClickSuppression: consumePreviewClick,
@@ -189,8 +191,12 @@ export default function SummonDeckModal({ state, onToggleLineup, onRandomLineup,
       </div>
 
       {/* 卡牌 · 网格(上下滚动选择) */}
-      <div className="relative flex-1 min-h-0 overflow-y-auto scrollbar-visible px-3 md:px-8 py-3">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+      <div className="relative flex-1 min-h-0">
+        <div
+          ref={gridScrollRef}
+          className="h-full overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pl-3 pr-5 md:pl-8 md:pr-10 py-3"
+        >
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
           {list.map((id, idx) => {
             const c = CARDS_BY_ID[id];
             if (!c) return null;
@@ -247,7 +253,9 @@ export default function SummonDeckModal({ state, onToggleLineup, onRandomLineup,
               </button>
             );
           })}
+          </div>
         </div>
+        <CustomScrollbar scrollRef={gridScrollRef} />
       </div>
 
       {/* 底部操作 */}
