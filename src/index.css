@@ -355,9 +355,9 @@ html, body { background: oklch(var(--background-50)); color: oklch(var(--foregro
 /* 可见滚动条(召唤卡组等长列表,移动端更清晰) */
 .scrollbar-visible {
   scrollbar-width: thin;
-  scrollbar-color: oklch(var(--primary-500) / 0.75) oklch(var(--background-300) / 0.4);
+  scrollbar-color: oklch(var(--primary-500) / 0.75) oklch(var(--foreground-400) / 0.35);
 }
 .scrollbar-visible::-webkit-scrollbar { width: 8px; height: 8px; }
-.scrollbar-visible::-webkit-scrollbar-track { background: oklch(var(--background-300) / 0.4); border-radius: 9999px; }
+.scrollbar-visible::-webkit-scrollbar-track { background: oklch(var(--foreground-400) / 0.35); border-radius: 9999px; }
 .scrollbar-visible::-webkit-scrollbar-thumb { background: oklch(var(--primary-500) / 0.75); border-radius: 9999px; }
 .scrollbar-visible::-webkit-scrollbar-thumb:hover { background: oklch(var(--primary-400)); }
