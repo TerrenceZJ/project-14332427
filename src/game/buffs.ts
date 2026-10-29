@@ -41,5 +41,8 @@ export function getPieceBuffs(piece: Piece): BuffInfo[] {
   if (piece.bonusAtk > 0) {
     list.push({ key: 'atk', icon: 'ri-sword-fill', label: '攻击', desc: `攻击力 +${piece.bonusAtk}`, count: piece.bonusAtk, tone: 'primary' });
   }
+  if (piece.tempAtk > 0) {
+    list.push({ key: 'atkTemp', icon: 'ri-sword-fill', label: '攻击', desc: `本回合攻击力 +${piece.tempAtk}`, count: piece.tempAtk, tone: 'accent' });
+  }
   return list;
 }

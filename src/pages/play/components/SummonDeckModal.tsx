@@ -189,7 +189,7 @@ export default function SummonDeckModal({ state, onToggleLineup, onRandomLineup,
       </div>
 
       {/* 卡牌 · 网格(上下滚动选择) */}
-      <div className="relative flex-1 min-h-0 overflow-y-auto px-3 md:px-8 py-3">
+      <div className="relative flex-1 min-h-0 overflow-y-auto scrollbar-visible px-3 md:px-8 py-3">
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
           {list.map((id, idx) => {
             const c = CARDS_BY_ID[id];

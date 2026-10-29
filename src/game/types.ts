@@ -68,6 +68,8 @@ export interface Piece {
   bonusMove: number;
   /** 永久攻击力加成 */
   bonusAtk: number;
+  /** 本回合临时攻击力加成 */
+  tempAtk: number;
   /** 无视持续性伤害的剩余回合数 */
   dotImmunity: number;
 }

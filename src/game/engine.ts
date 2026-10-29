@@ -19,7 +19,7 @@ const makePiece = (type: PieceType, team: Team, fromCard?: string): Piece => {
     hp: d.hp, maxHp: d.hp, atk: d.atk, range: d.range, move: d.move, heal: d.heal,
     isLord: false, lordRevealed: false, shieldTurns: 0, revived: false, alive: true,
     mode: 'attack', facing: team === 'player' ? 'right' : 'left', path: [], attackTarget: undefined, healTarget: undefined, acted: false, revealed: team === 'player',
-    stunned: 0, blockHits: 0, dmgReduction: 0, bonusMove: 0, bonusAtk: 0, dotImmunity: 0,
+    stunned: 0, blockHits: 0, dmgReduction: 0, bonusMove: 0, bonusAtk: 0, tempAtk: 0, dotImmunity: 0,
   };
 };
 
@@ -528,10 +528,10 @@ function applyCardEffect(s: GameState, cardId: string, caster: Team, targets: { 
       const allies = s.pieces.filter((p) => p.team === caster && p.alive && p.placed);
       const boosted = shuffle(allies).slice(0, 3);
       boosted.forEach((p) => {
-        p.bonusAtk += 1;
+        p.tempAtk += 1;
         pushLog(s, [
           ...pieceRef(p),
-          { text: ' 获得法力灌注,攻击力 +1。' },
+          { text: ' 获得法力灌注,本回合攻击力 +1。' },
         ], p.team, 'info');
       });
       break;
@@ -1129,7 +1129,7 @@ export function executeTurn(input: GameState): TurnFrame[] {
       }
       continue;
     }
-    const effAtk = p.atk + p.bonusAtk;
+    const effAtk = p.atk + p.bonusAtk + p.tempAtk;
     let t: Piece | undefined;
     if (p.team === 'player' && p.attackTarget) {
       t = s.pieces.find((o) => o.id === p.attackTarget && o.alive && o.placed && o.team !== p.team && dist(p.x, p.y, o.x, o.y) <= p.range);
@@ -1309,6 +1309,7 @@ export function beginNextTurn(state: GameState): GameState {
     p.acted = false; p.path = []; p.mode = 'attack';
     p.attackTarget = undefined; p.healTarget = undefined;
     p.bonusMove = 0;
+    p.tempAtk = 0;
   });
   s.pieces.forEach((p) => {
     if (!p.alive) return;

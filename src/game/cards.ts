@@ -39,7 +39,7 @@ export const CARDS: CardDef[] = [
   { id: 'c_shuffle', name: '空间乱流', category: 'special', cost: 2, owner: 'warrior', ownerName: '战士', desc: '让对方所有目标互相随机更换位置。', icon: 'ri-shuffle-line', target: { kind: 'none', count: 0 } },
   { id: 'c_heal', name: '生命祷歌', category: 'special', cost: 2, owner: 'guardian', ownerName: '盾卫', desc: '让己方所有目标各回复 1 点血量。', icon: 'ri-heart-pulse-line', target: { kind: 'none', count: 0 } },
   { id: 'c_rain', name: '灵箭骤雨', category: 'special', cost: 2, owner: 'archer', ownerName: '弓箭', desc: '让对方所有目标各随机受到 0-2 点伤害。', icon: 'ri-rainy-line', target: { kind: 'none', count: 0 } },
-  { id: 'c_mana', name: '法力狂潮', category: 'special', cost: 2, owner: 'mage', ownerName: '法师', desc: '让己方随机 3 个目标各永久增加 1 点攻击力。', icon: 'ri-flood-line', target: { kind: 'none', count: 0 } },
+  { id: 'c_mana', name: '法力狂潮', category: 'special', cost: 2, owner: 'mage', ownerName: '法师', desc: '让己方随机 3 个目标当前回合内各增加 1 点攻击力。', icon: 'ri-flood-line', target: { kind: 'none', count: 0 } },
 ];
 
 export const CARDS_BY_ID: Record<string, CardDef> = Object.fromEntries(

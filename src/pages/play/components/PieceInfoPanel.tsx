@@ -83,7 +83,7 @@ export default function PieceInfoPanel({ piece, onClose, onIssue, ap, compact = 
       {compact ? (
         <div className="mb-1.5">
           <div className="grid grid-cols-4 gap-1">
-            <Stat compact icon="ri-sword-line" label="攻击" value={String(piece.atk + piece.bonusAtk)} />
+            <Stat compact icon="ri-sword-line" label="攻击" value={String(piece.atk + piece.bonusAtk + piece.tempAtk)} />
             <Stat compact icon="ri-run-line" label="移动" value={String(piece.move + piece.bonusMove)} />
             <Stat compact icon="ri-focus-3-line" label="范围" value={String(piece.range)} />
             <Stat compact icon="ri-heart-pulse-line" label="治疗" value={piece.heal > 0 ? String(piece.heal) : '—'} />
@@ -117,7 +117,7 @@ export default function PieceInfoPanel({ piece, onClose, onIssue, ap, compact = 
             </div>
           </div>
 
-          <Stat icon="ri-sword-line" label="攻击" value={String(piece.atk + piece.bonusAtk)} />
+          <Stat icon="ri-sword-line" label="攻击" value={String(piece.atk + piece.bonusAtk + piece.tempAtk)} />
           <Stat icon="ri-run-line" label="移动" value={String(piece.move + piece.bonusMove)} />
           <Stat icon="ri-focus-3-line" label="范围" value={String(piece.range)} />
           <Stat icon="ri-heart-pulse-line" label="治疗" value={piece.heal > 0 ? String(piece.heal) : '—'} />
