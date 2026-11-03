@@ -358,6 +358,7 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
           {/* 部署阶段:中线两侧禁止放置的缓冲带 */}
           {state.phase === 'deploy' && (
             <div
+              data-tutorial="no-deploy"
               className="absolute deploy-restrict pointer-events-none"
               style={{
                 left: `${((mid - state.deployGap) / cols) * 100}%`,
@@ -382,6 +383,7 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
 
           {/* 敌方侧薄云层 */}
           <div
+            data-tutorial="enemy-zone"
             className="absolute board-clouds pointer-events-none"
             style={{
               left: `${(mid / cols) * 100}%`,

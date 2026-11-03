@@ -9,6 +9,7 @@ export type TutorialWait =
   | { type: 'select' }      // 等待玩家选中一只棋子
   | { type: 'place' }       // 等待玩家放置一只棋子
   | { type: 'move' }        // 等待玩家规划移动路径
+  | { type: 'target' }      // 等待玩家锁定一个攻击目标
   | { type: 'confirm' }     // 等待玩家确认一条指令
   | { type: 'phase' };      // 等待阶段变化(如确认出战进入指令阶段)
 
@@ -38,7 +39,7 @@ export const TUTORIAL_LEVELS: TutorialLevel[] = [
   {
     id: 0,
     name: '第 0 关 · 初识灵兽',
-    subtitle: '单只盾卫，认识棋盘与三种模式',
+    subtitle: '单只盾卫，认识棋盘与战斗模式',
     preset: {
       cols: 6,
       rows: 1,
@@ -55,6 +56,30 @@ export const TUTORIAL_LEVELS: TutorialLevel[] = [
         phase: 'deploy',
         title: '欢迎来到灵契终焉',
         body: '这是一场迷雾中的同步指令战棋：双方在同一回合下达指令，随后同时执行。这一关你只有一只盾卫，跟着引导逐步操作，先熟悉最基础的规则。',
+        wait: { type: 'none' },
+      },
+      {
+        id: 'no-deploy',
+        phase: 'deploy',
+        target: 'no-deploy',
+        title: '初始不可放置',
+        body: '看棋盘中间这条被锁定的缓冲带——「初始不可放置」。初始(部署)阶段这块区域不能放置棋子，你的灵兽只能放在它左侧的己方区域。',
+        wait: { type: 'none' },
+      },
+      {
+        id: 'zones',
+        phase: 'deploy',
+        target: 'board',
+        title: '己方区域 · 敌方区域',
+        body: '战场以中线为界分成两半：中线左侧(绿色)是己方区域，右侧是敌方区域。这一关你只能把盾卫部署在己方区域。',
+        wait: { type: 'none' },
+      },
+      {
+        id: 'fog',
+        phase: 'deploy',
+        target: 'enemy-zone',
+        title: '迷雾 · 敌方区域',
+        body: '敌方区域初始被迷雾笼罩，无法看到敌方的布阵。随着灵兽前进揭开视野，才能逐步看清敌情。',
         wait: { type: 'none' },
       },
       {
@@ -101,8 +126,8 @@ export const TUTORIAL_LEVELS: TutorialLevel[] = [
         id: 'mode',
         phase: 'command',
         target: 'mode',
-        title: '三种战斗模式',
-        body: '在下方可以切换「攻击 / 防御 / 侦察」：攻击会攻击敌人；防御本回合受到的伤害-1；侦察视野扩大到2格但多耗1点行动点。这一关先保持攻击即可。',
+        title: '两种战斗模式',
+        body: '在下方可以切换「攻击 / 防御」：攻击是进攻姿态，防御本回合受到的伤害-1。这一关先保持攻击即可。',
         wait: { type: 'none' },
       },
       {
@@ -110,7 +135,7 @@ export const TUTORIAL_LEVELS: TutorialLevel[] = [
         phase: 'command',
         target: 'confirm',
         title: '确认指令',
-        body: '点这个「确认」按钮，锁定盾卫的移动与攻击指令。',
+        body: '点这个「确认」按钮，锁定盾卫的移动指令。',
         wait: { type: 'confirm' },
       },
       {
@@ -118,7 +143,39 @@ export const TUTORIAL_LEVELS: TutorialLevel[] = [
         phase: 'command',
         target: 'end-card',
         title: '结束指令 · 战斗',
-        body: '指令已就绪！点右下角的「结束指令 · 战斗」按钮，进入同步执行阶段，双方会同时行动。盾卫靠近敌方战士后会自动攻击，敌方只有 1 点血，一击即可消灭。',
+        body: '指令已就绪！点右下角的「结束指令 · 战斗」按钮，进入同步执行阶段，双方会同时行动。盾卫将向敌方推进。',
+        wait: { type: 'phase' },
+      },
+      {
+        id: 'attack-select',
+        phase: 'command',
+        target: 'board',
+        title: '手动攻击 · 选中盾卫',
+        body: '注意：灵兽不会自动攻击！盾卫已靠近敌方战士，现在需要手动发起攻击。先点击盾卫选中它。',
+        wait: { type: 'select' },
+      },
+      {
+        id: 'attack-target',
+        phase: 'command',
+        target: 'board',
+        title: '锁定敌方目标',
+        body: '现在点击敌方战士，把它锁定为攻击目标（会出现红色的目标标记与连线）。',
+        wait: { type: 'target' },
+      },
+      {
+        id: 'attack-confirm',
+        phase: 'command',
+        target: 'confirm',
+        title: '确认攻击指令',
+        body: '最后点「确认」按钮，完成这次手动攻击指令。',
+        wait: { type: 'confirm' },
+      },
+      {
+        id: 'attack-end',
+        phase: 'command',
+        target: 'end-card',
+        title: '结束指令 · 战斗',
+        body: '点「结束指令 · 战斗」，盾卫会向敌方战士发起攻击——它只有 1 点血，一击即可消灭！',
         wait: { type: 'phase' },
       },
     ],
@@ -141,7 +198,7 @@ export const TUTORIAL_LEVELS: TutorialLevel[] = [
         phase: 'command',
         target: 'command',
         title: '指令阶段',
-        body: '进入指令阶段后，你可以为每只灵兽分别下达指令：移动到某个格子，或切换攻击/防御/侦察姿态。',
+        body: '进入指令阶段后，你可以为每只灵兽分别下达指令：移动到某个格子，或切换攻击/防御姿态。',
       },
       {
         id: 'piece-select',
@@ -162,7 +219,7 @@ export const TUTORIAL_LEVELS: TutorialLevel[] = [
         phase: 'command',
         target: 'board',
         title: '发起攻击',
-        body: '进入射程后灵兽会自动攻击最近的敌人。让近战顶前、远程在后输出，配合更高效。',
+        body: '进入射程后点击敌方棋子锁定攻击目标，灵兽才会发起攻击。让近战顶前、远程在后输出，配合更高效。',
       },
     ],
   },

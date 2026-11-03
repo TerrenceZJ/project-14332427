@@ -77,12 +77,14 @@ export default function ResultOverlay({ state, onRestart, onLobby }: Props) {
           >
             返回大厅
           </button>
-          <button
-            onClick={onRestart}
-            className="flex-1 px-5 py-3.5 rounded-md text-sm font-label bg-primary-500 text-background-50 hover:bg-primary-600 cursor-pointer whitespace-nowrap"
-          >
-            再战一局
-          </button>
+          {!tutorial && (
+            <button
+              onClick={onRestart}
+              className="flex-1 px-5 py-3.5 rounded-md text-sm font-label bg-primary-500 text-background-50 hover:bg-primary-600 cursor-pointer whitespace-nowrap"
+            >
+              再战一局
+            </button>
+          )}
         </div>
       </div>
     </div>

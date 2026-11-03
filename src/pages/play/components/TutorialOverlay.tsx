@@ -52,15 +52,30 @@ export default function TutorialOverlay({ step, stepIndex, totalSteps, onNext, o
       setRect(null);
       return;
     }
-    const measure = () => setRect(el.getBoundingClientRect());
-    measure();
-    window.addEventListener('resize', measure);
-    window.addEventListener('scroll', measure, true);
-    const ro = new ResizeObserver(measure);
+    let raf = 0;
+    let last = '';
+    // 仅当目标元素的位置/尺寸变化时才更新,避免每帧触发渲染
+    const update = () => {
+      const r = el.getBoundingClientRect();
+      const k = [r.left, r.top, r.width, r.height].map((v) => Math.round(v)).join(',');
+      if (k === last) return;
+      last = k;
+      setRect(r);
+    };
+    const tick = () => {
+      update();
+      raf = requestAnimationFrame(tick);
+    };
+    // 逐帧跟随目标元素(棋盘拖拽平移会改变元素屏幕坐标,而非 resize/scroll)
+    raf = requestAnimationFrame(tick);
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => {
-      window.removeEventListener('resize', measure);
-      window.removeEventListener('scroll', measure, true);
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
       ro.disconnect();
     };
   }, [step]);

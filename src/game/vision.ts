@@ -1,7 +1,7 @@
 import type { GameState, Team } from './types';
 import { key, inBounds, midOf } from './constants';
 
-/** 某阵营的视野格集合:本方半场始终可见 + 己方棋子周围 1 格(侦察姿态 2 格) */
+/** 某阵营的视野格集合:本方半场始终可见 + 己方棋子周围 1 格 */
 function visionFor(s: GameState, team: Team): Set<string> {
   const set = new Set<string>();
   const mid = midOf(s.cols);
@@ -12,7 +12,7 @@ function visionFor(s: GameState, team: Team): Set<string> {
   }
   for (const p of s.pieces) {
     if (!p.alive || !p.placed || p.team !== team) continue;
-    const r = p.mode === 'scout' ? 2 : 1;
+    const r = 1;
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
         const nx = p.x + dx;

@@ -7,7 +7,7 @@ export type PieceType =
   | 'mage'
   | 'priest';
 
-export type Mode = 'attack' | 'defend' | 'scout';
+export type Mode = 'attack' | 'defend';
 
 /** 棋子朝向:上 / 下 / 左 / 右 */
 export type Facing = 'up' | 'down' | 'left' | 'right';

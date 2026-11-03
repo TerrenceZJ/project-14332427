@@ -71,9 +71,14 @@ export default function BattlePage() {
   useEffect(() => {
     if (prevPhaseRef.current !== state.phase) {
       prevPhaseRef.current = state.phase;
-      if (state.phase === 'deploy') setSummonOpen(true);
+      if (state.phase === 'deploy') {
+        // 教程关的阵容已预设,不弹出选卡界面;仅常规对局打开
+        if (!level) setSummonOpen(true);
+        // 重新开始:从头播放引导步骤
+        setTutorialStep(0);
+      }
     }
-  }, [state.phase]);
+  }, [state.phase, level]);
 
   useEffect(() => {
     if (state.phase === 'card1') {
@@ -173,17 +178,17 @@ export default function BattlePage() {
     if (!pendingCard) return null;
     switch (pendingCard.target.kind) {
       case 'enemy1': return '选择 1 个敌方目标';
-      case 'enemy2': return '选择敌方目标(1~2 个)';
+      case 'enemy2': return '选择 2 个敌方目标';
       case 'ally1': return '选择 1 个己方目标';
-      case 'ally2': return '选择己方目标(1~2 个)';
+      case 'ally2': return '选择 2 个己方目标';
       case 'enemyAlly': return pending!.pieceIds.length === 0 ? '先选择敌方目标' : '再选择己方目标';
       case 'cell': return pending!.cell ? '已选区域,点击发动' : '点击战场,选择 3×3 区域中心';
       default: return null;
     }
   }, [pendingCard, pending]);
 
-  // 发动卡牌所需的最少目标数(穿云箭雨必须选满敌方+己方两个目标)
-  const pendingMin = pendingCard?.target.kind === 'enemyAlly' ? 2 : 1;
+  // 发动卡牌所需的最少目标数:以卡牌声明的目标数量为准(如双击破阵 / 异位祈祷需选满 2 个)
+  const pendingMin = pendingCard ? Math.max(1, pendingCard.target.count) : 1;
 
   // 当前选中的卡牌是否已满足发动条件(区域卡需选定中心格,目标卡需选满目标)
   const pendingReady = pending && pendingCard
@@ -352,6 +357,7 @@ export default function BattlePage() {
     placed: state.pieces.filter((p) => p.team === 'player' && p.placed).length,
     moveLen: state.pieces.filter((p) => p.team === 'player').reduce((n, p) => n + p.path.length, 0),
     acted: state.pieces.filter((p) => p.team === 'player' && p.acted).length,
+    targetCount: state.pieces.filter((p) => p.team === 'player' && p.attackTarget).length,
     phase: state.phase,
   });
 
@@ -362,6 +368,7 @@ export default function BattlePage() {
       placed: state.pieces.filter((p) => p.team === 'player' && p.placed).length,
       moveLen: state.pieces.filter((p) => p.team === 'player').reduce((n, p) => n + p.path.length, 0),
       acted: state.pieces.filter((p) => p.team === 'player' && p.acted).length,
+      targetCount: state.pieces.filter((p) => p.team === 'player' && p.attackTarget).length,
       phase: state.phase,
     };
     prevKeyRef.current = cur;
@@ -375,6 +382,7 @@ export default function BattlePage() {
       case 'select': done = !!cur.selectedId && cur.selectedId !== prev.selectedId; break;
       case 'place': done = cur.placed > prev.placed; break;
       case 'move': done = cur.moveLen > prev.moveLen; break;
+      case 'target': done = cur.targetCount > prev.targetCount; break;
       case 'confirm': done = cur.acted > prev.acted; break;
       case 'phase': done = cur.phase !== prev.phase; break;
       default: break;
@@ -407,6 +415,7 @@ export default function BattlePage() {
         onPhaseTimeout={handlePhaseTimeout}
         onOpenEnemyDeck={() => setEnemyDeckOpen(true)}
         onReopenSummon={() => setSummonOpen(true)}
+        intro={level?.id === 0}
       />
 
       <ResultOverlay state={state} onRestart={b.restart} onLobby={() => navigate('/')} />

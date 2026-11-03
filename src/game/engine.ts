@@ -494,10 +494,10 @@ function applyCardEffect(s: GameState, cardId: string, caster: Team, targets: { 
       targets.pieceIds.forEach((id) => {
         const t = byId(id);
         if (t) {
-          t.bonusMove += 2;
+          t.stunned = 0;
           pushLog(s, [
             ...pieceRef(t),
-            { text: ' 移动力 +2(本回合)。' },
+            { text: ' 解除封锁,本回合无视移动与攻击限制。' },
           ], t.team, 'info');
         }
       });
@@ -600,6 +600,7 @@ export function playCard(state: GameState, cardId: string, caster: Team, targets
     { text: `【${card.name}】`, team: caster },
   ], caster, 'card');
   applyCardEffect(s, cardId, caster, targets);
+  checkVictory(s);
   return s;
 }
 
@@ -755,7 +756,7 @@ export function command(
   // 已下令的棋子在本回合锁定指令,不可再修改
   if (p.acted) return state;
 
-  // 结算指令消耗:基础 1 点;侦察姿态额外多消耗 1 点
+  // 结算指令消耗:每次 1 点行动点
   const charge = (cost: number) => {
     if (s.ap < cost) return false;
     s.ap -= cost;
@@ -780,10 +781,8 @@ export function command(
 
   // 确认指令:此时才计算行动点并结束该棋子的行动
   // 防御同样允许保留移动路径(先移动到指定格再进入防御姿态),因此不再清空路径
-  // 侦察姿态额外多消耗 1 点行动点,行动点不足时无法确认
   if (patch.confirm) {
-    const cost = p.mode === 'scout' ? 2 : 1;
-    if (!charge(cost)) return state;
+    if (!charge(1)) return state;
     return s;
   }
 
@@ -793,7 +792,7 @@ export function command(
     return s;
   }
 
-  // 切换行动模式(攻击 / 防御 / 侦察):仅记录状态,不消耗行动点、不结束行动
+  // 切换行动模式(攻击 / 防御):仅记录状态,不消耗行动点、不结束行动
   if (patch.mode !== undefined) {
     p.mode = patch.mode;
     return s;
@@ -905,9 +904,8 @@ export function confirmAll(state: GameState): GameState {
     if (p.team !== 'player' || !p.alive || !p.placed || p.acted) continue;
     const hasDraft = p.path.length > 0 || p.attackTarget !== undefined || p.healTarget !== undefined || p.mode === 'defend';
     if (!hasDraft) continue;
-    const cost = p.mode === 'scout' ? 2 : 1;
-    if (s.ap < cost) continue;
-    s.ap -= cost;
+    if (s.ap < 1) continue;
+    s.ap -= 1;
     p.acted = true;
   }
   return s;
@@ -999,7 +997,7 @@ export function executeTurn(input: GameState): TurnFrame[] {
   // 刷新视野:当前能被玩家看到的敌方棋子标记为已知
   markRevealed(s);
 
-  // 0) 战前宣告:封锁 / 防御姿态 / 侦察结果
+  // 0) 战前宣告:封锁 / 防御姿态
   // 被封锁(眩晕)的棋子本回合无法行动
   for (const p of s.pieces) {
     if (!p.alive || !p.placed || p.stunned <= 0) continue;
@@ -1017,27 +1015,6 @@ export function executeTurn(input: GameState): TurnFrame[] {
       ...pieceRef(p),
       { text: ' 结阵防御,进入防御姿态(受到的伤害 -1)。' },
     ], p.team, 'info');
-  }
-  // 侦察结果:玩家的侦察姿态棋子报告所见
-  for (const p of s.pieces) {
-    if (p.team !== 'player' || !p.alive || !p.placed || p.mode !== 'scout') continue;
-    const found = s.pieces.filter(
-      (e) => e.team === 'enemy' && e.alive && e.placed && dist(p.x, p.y, e.x, e.y) <= 2
-    );
-    if (found.length === 0) {
-      pushLog(s, [
-      ...pieceRef(p),
-      { text: ' 展开侦察,周围未见敌踪。' },
-      ], 'player', 'info');
-      continue;
-    }
-    const segs: LogSegment[] = [...pieceRef(p), { text: ' 展开侦察,发现 ' }];
-    found.forEach((e, i) => {
-      if (i > 0) segs.push({ text: '、' });
-      segs.push({ text: BEASTS[e.type].name, team: 'enemy' });
-    });
-    segs.push({ text: '。' });
-    pushLog(s, segs, 'player', 'info');
   }
 
   // 帧 0:执行开始,定格原始站位(含战前宣告信息)
@@ -1181,13 +1158,8 @@ export function executeTurn(input: GameState): TurnFrame[] {
     }
     const effAtk = p.atk + p.bonusAtk + p.tempAtk;
     let t: Piece | undefined;
-    if (p.team === 'player' && p.attackTarget) {
+    if (p.attackTarget) {
       t = s.pieces.find((o) => o.id === p.attackTarget && o.alive && o.placed && o.team !== p.team && dist(p.x, p.y, o.x, o.y) <= p.range);
-    } else {
-      const enemies = s.pieces
-        .filter((o) => o.alive && o.placed && o.team !== p.team && dist(p.x, p.y, o.x, o.y) <= p.range)
-        .sort((a, b) => dist(p.x, p.y, a.x, a.y) - dist(p.x, p.y, b.x, b.y) || a.hp - b.hp);
-      t = enemies[0];
     }
     if (!t) continue;
     // 无敌护盾:完全免疫
@@ -1295,17 +1267,7 @@ export function executeTurn(input: GameState): TurnFrame[] {
   s.vision = Array.from(new Set([...s.vision, ...vis]));
 
   // 8) 胜负
-  const pLord = s.pieces.find((p) => p.team === 'player' && p.isLord);
-  const eLord = s.pieces.find((p) => p.team === 'enemy' && p.isLord);
-  if (!pLord || !pLord.alive) {
-    s.winner = 'enemy'; s.phase = 'gameover';
-    pushLog(s, s.skipCards ? '你的灵兽被消灭…… 战败。' : '你的灵主已陨落…… 战败。', 'enemy', 'death');
-  } else if (!eLord || !eLord.alive) {
-    s.winner = 'player'; s.phase = 'gameover';
-    pushLog(s, s.skipCards ? '敌方灵兽被消灭!你赢了!' : '敌方灵主陨落!你赢得了圣战!', 'player', 'death');
-  } else {
-    s.phase = 'execute';
-  }
+  if (!checkVictory(s)) s.phase = 'execute';
 
   // 末帧:定格结算后的最终局面
   pushFrame(1100);
@@ -1335,6 +1297,22 @@ function resolveDeath(s: GameState, p: Piece, events: TurnEvent[]) {
     ...pieceRef(p),
     { text: '被消灭。' },
   ], p.team, 'damage');
+}
+
+/** 判定胜负:任一方灵主阵亡即结束(无卡牌关卡则任一灵兽被消灭即结束) */
+function checkVictory(s: GameState): boolean {
+  const pLord = s.pieces.find((p) => p.team === 'player' && p.isLord);
+  const eLord = s.pieces.find((p) => p.team === 'enemy' && p.isLord);
+  if (!pLord || !pLord.alive) {
+    s.winner = 'enemy'; s.phase = 'gameover';
+    pushLog(s, s.skipCards ? '你的灵兽被消灭…… 战败。' : '你的灵主已陨落…… 战败。', 'enemy', 'death');
+    return true;
+  } else if (!eLord || !eLord.alive) {
+    s.winner = 'player'; s.phase = 'gameover';
+    pushLog(s, s.skipCards ? '敌方灵兽被消灭!你赢了!' : '敌方灵主陨落!你赢得了圣战!', 'player', 'death');
+    return true;
+  }
+  return false;
 }
 
 /** 进入下一回合:重置行动点、抽牌、AI 出牌,回到卡牌阶段 1 */

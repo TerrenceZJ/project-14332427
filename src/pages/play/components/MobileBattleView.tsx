@@ -66,6 +66,8 @@ interface Props {
   onPhaseTimeout: () => void;
   onOpenEnemyDeck: () => void;
   onReopenSummon: () => void;
+  /** 第 0 关引导:隐藏回合 / 行动点 / 己方敌方 / 牌库 / 日志 / 倒计时等辅助信息 */
+  intro?: boolean;
 }
 
 /** 移动端(竖屏)对战界面:顶栏 + 大棋盘 + 底部可上滑抽屉(手牌 / 棋子 / 指令 / 日志) */
@@ -92,6 +94,7 @@ export default function MobileBattleView({
   onPhaseTimeout,
   onOpenEnemyDeck,
   onReopenSummon,
+  intro = false,
 }: Props) {
   const navigate = useNavigate();
   const { state } = b;
@@ -157,8 +160,8 @@ export default function MobileBattleView({
     }
   }, [pendingCardId]);
 
-  // 阶段倒计时(部署 60s / 抽卡 120s / 指令 60s)
-  const countdown = isDeploy || canPlay || isCommand;
+  // 阶段倒计时(部署 60s / 抽卡 120s / 指令 60s);第 0 关引导不设时间限制
+  const countdown = (isDeploy || canPlay || isCommand) && !intro;
   // 本阶段总时长(用于倒计时进度环的比例)
   const phaseTotal = isDeploy ? 60 : state.phase === 'card1' ? 120 : 60;
   const [count, setCount] = useState(60);
@@ -196,12 +199,12 @@ export default function MobileBattleView({
   const tabs: TabDef[] = isDeploy
     ? [
         { id: 'piece', label: '棋子', icon: 'ri-layout-grid-fill' },
-        { id: 'log', label: '日志', icon: 'ri-file-list-3-line' },
+        ...(intro ? [] : [{ id: 'log' as Tab, label: '日志', icon: 'ri-file-list-3-line' }]),
       ]
     : [
         ...(state.skipCards ? [] : [{ id: 'hand' as Tab, label: '手牌', icon: 'ri-hand-coin-line', badge: state.hand.length }]),
         ...(isCommand ? [{ id: 'cmd' as Tab, label: '指令', icon: 'ri-magic-line' }] : []),
-        { id: 'log', label: '日志', icon: 'ri-file-list-3-line' },
+        ...(intro ? [] : [{ id: 'log' as Tab, label: '日志', icon: 'ri-file-list-3-line' }]),
       ];
 
   // 指令阶段:是否还有已规划的路径(决定清除 / 撤销按钮是否可用)
@@ -277,7 +280,7 @@ export default function MobileBattleView({
   }, [selectedPiece, isCommand, open, overlayH]);
 
   // 阶段切换后,若当前标签已不属于本阶段(例如离开指令阶段后仍停在「指令」),回退到「手牌」
-  const validTab: Tab = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
+  const validTab: Tab = tabs.some((t) => t.id === tab) ? tab : tabs[0]?.id ?? 'piece';
 
   // 底部弹出面板(手牌 / 指令 / 日志)遮挡棋盘的高度,用于让棋盘可向上平移
   const overlayOpen = validTab !== 'piece' && open;
@@ -348,6 +351,7 @@ export default function MobileBattleView({
           onMakeLord={b.makeLord}
           onRandomize={b.randomize}
           onReopenSummon={onReopenSummon}
+          intro={intro}
         />
       );
     }
@@ -458,7 +462,7 @@ export default function MobileBattleView({
         </button>
         <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-hidden">
           <span className="font-heading text-xs text-foreground-950 whitespace-nowrap shrink-0">{phaseLabel[state.phase]}</span>
-          <BattleStatusBar state={state} />
+          {!intro && <BattleStatusBar state={state} />}
         </div>
         {countdown ? (
           <span className={`shrink-0 font-heading text-xs tabular-nums ${count <= 10 ? 'text-secondary-400' : 'text-foreground-900'}`}>
@@ -520,7 +524,7 @@ export default function MobileBattleView({
                 {BEASTS[selectedPiece.type].name}
               </span>
               <div className="flex-1 min-w-0 flex items-center gap-0.5 p-0.5 rounded-full bg-background-200/70 border border-background-300/50" data-tutorial="mode">
-                {(['attack', 'defend', 'scout'] as Mode[]).map((m) => (
+                {(['attack', 'defend'] as Mode[]).map((m) => (
                   <button
                     key={m}
                     onClick={() => b.issue(selectedPiece.id, { mode: m })}
@@ -528,7 +532,7 @@ export default function MobileBattleView({
                       selectedPiece.mode === m ? 'bg-primary-500 text-background-50' : 'text-foreground-600 hover:text-foreground-900'
                     }`}
                   >
-                    {m === 'attack' ? '攻击' : m === 'defend' ? '防御' : '侦察'}
+                    {m === 'attack' ? '攻击' : '防御'}
                   </button>
                 ))}
               </div>
@@ -542,12 +546,12 @@ export default function MobileBattleView({
               </button>
               <button
                 onClick={() => b.issue(selectedPiece.id, { confirm: true })}
-                disabled={state.ap < (selectedPiece.mode === 'scout' ? 2 : 1)}
+                disabled={state.ap < 1}
                 data-tutorial="confirm"
                 className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
               >
                 <i className="ri-check-line w-3.5 h-3.5 flex items-center justify-center"></i>
-                确认 · {selectedPiece.mode === 'scout' ? 2 : 1}点
+                确认 · 1点
               </button>
             </div>
           </div>
@@ -626,27 +630,49 @@ export default function MobileBattleView({
               </button>
             </div>
           ) : isDeploy ? (
-            <CountdownRingFrame remaining={count} total={phaseTotal} warnAt={10} radius={6} className="shrink-0">
-            <button
-              onClick={b.start}
-              disabled={!deployReady}
-              data-tutorial="deploy-start"
-              className="px-2.5 py-1.5 rounded-md font-label text-[11px] bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
-            >
-              {deployHint}
-            </button>
-            </CountdownRingFrame>
+            intro ? (
+              <button
+                onClick={b.start}
+                disabled={!deployReady}
+                data-tutorial="deploy-start"
+                className="shrink-0 px-2.5 py-1.5 rounded-md font-label text-[11px] bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+              >
+                {deployHint}
+              </button>
+            ) : (
+              <CountdownRingFrame remaining={count} total={phaseTotal} warnAt={10} radius={6} className="shrink-0">
+                <button
+                  onClick={b.start}
+                  disabled={!deployReady}
+                  data-tutorial="deploy-start"
+                  className="px-2.5 py-1.5 rounded-md font-label text-[11px] bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+                >
+                  {deployHint}
+                </button>
+              </CountdownRingFrame>
+            )
           ) : canEnd ? (
-            <CountdownRingFrame remaining={count} total={phaseTotal} warnAt={10} radius={6} className="shrink-0">
-            <button
-              onClick={b.advance}
-              disabled={b.busy}
-              data-tutorial="end-card"
-              className="px-2.5 py-1.5 rounded-md font-label text-[11px] bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
-            >
-              {b.busy ? '结算中…' : confirmLabel[state.phase]}
-            </button>
-            </CountdownRingFrame>
+            intro ? (
+              <button
+                onClick={b.advance}
+                disabled={b.busy}
+                data-tutorial="end-card"
+                className="shrink-0 px-2.5 py-1.5 rounded-md font-label text-[11px] bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+              >
+                {b.busy ? '结算中…' : confirmLabel[state.phase]}
+              </button>
+            ) : (
+              <CountdownRingFrame remaining={count} total={phaseTotal} warnAt={10} radius={6} className="shrink-0">
+                <button
+                  onClick={b.advance}
+                  disabled={b.busy}
+                  data-tutorial="end-card"
+                  className="px-2.5 py-1.5 rounded-md font-label text-[11px] bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+                >
+                  {b.busy ? '结算中…' : confirmLabel[state.phase]}
+                </button>
+              </CountdownRingFrame>
+            )
           ) : null}
         </div>
 

@@ -4,6 +4,22 @@ import { BEASTS } from '@/game/beasts';
 import { getPieceBuffs, BUFF_TONES } from '@/game/buffs';
 import PieceAvatar from './PieceAvatar';
 
+type FxTone = 'secondary' | 'primary' | 'accent';
+
+interface PieceFx {
+  key: number;
+  icon: string;
+  tone: FxTone;
+  /** 纯冲击环(命中伤害,无图标) */
+  hit?: boolean;
+}
+
+const FX_TONES: Record<FxTone, { ring: string; icon: string; glow: string }> = {
+  secondary: { ring: 'oklch(var(--secondary-400))', icon: 'oklch(var(--secondary-300))', glow: 'oklch(var(--secondary-500))' },
+  primary: { ring: 'oklch(var(--primary-400))', icon: 'oklch(var(--primary-300))', glow: 'oklch(var(--primary-500))' },
+  accent: { ring: 'oklch(var(--accent-400))', icon: 'oklch(var(--accent-300))', glow: 'oklch(var(--accent-500))' },
+};
+
 interface Props {
   piece: Piece;
   revealLord: boolean;
@@ -43,6 +59,51 @@ export default function PieceToken({ piece, revealLord, selected, targetable, ta
     const t2 = window.setTimeout(() => { setLanding(false); }, 1200);
     return () => { window.clearTimeout(t1); window.clearTimeout(t2); };
   }, [piece.x, piece.y]);
+
+  // 卡牌 / 战斗效果:根据棋子状态变化(封锁 / 受伤 / 治疗 / 增益)触发对应特效
+  const [fx, setFx] = useState<PieceFx | null>(null);
+  const fxKeyRef = useRef(0);
+  const prevFxRef = useRef({
+    stunned: piece.stunned,
+    hp: piece.hp,
+    blockHits: piece.blockHits,
+    dmgReduction: piece.dmgReduction,
+    bonusMove: piece.bonusMove,
+    bonusAtk: piece.bonusAtk,
+    tempAtk: piece.tempAtk,
+    dotImmunity: piece.dotImmunity,
+  });
+
+  useEffect(() => {
+    const prev = prevFxRef.current;
+    const now = {
+      stunned: piece.stunned,
+      hp: piece.hp,
+      blockHits: piece.blockHits,
+      dmgReduction: piece.dmgReduction,
+      bonusMove: piece.bonusMove,
+      bonusAtk: piece.bonusAtk,
+      tempAtk: piece.tempAtk,
+      dotImmunity: piece.dotImmunity,
+    };
+    prevFxRef.current = now;
+
+    let next: PieceFx | null = null;
+    if (now.stunned > prev.stunned) next = { key: 0, icon: 'ri-lock-2-fill', tone: 'secondary' };
+    else if (now.stunned < prev.stunned) next = { key: 0, icon: 'ri-lock-unlock-fill', tone: 'primary' };
+    else if (now.hp < prev.hp) next = { key: 0, icon: '', tone: 'secondary', hit: true };
+    else if (now.hp > prev.hp) next = { key: 0, icon: 'ri-heart-pulse-fill', tone: 'accent' };
+    else if (now.blockHits > prev.blockHits) next = { key: 0, icon: 'ri-shield-star-fill', tone: 'primary' };
+    else if (now.dmgReduction > prev.dmgReduction) next = { key: 0, icon: 'ri-shield-flash-fill', tone: 'accent' };
+    else if (now.bonusMove > prev.bonusMove) next = { key: 0, icon: 'ri-run-fill', tone: 'accent' };
+    else if (now.bonusAtk > prev.bonusAtk || now.tempAtk > prev.tempAtk) next = { key: 0, icon: 'ri-sword-fill', tone: 'primary' };
+    else if (now.dotImmunity > prev.dotImmunity) next = { key: 0, icon: 'ri-shield-cross-fill', tone: 'accent' };
+
+    if (!next) return;
+    setFx({ ...next, key: ++fxKeyRef.current });
+    const t = window.setTimeout(() => setFx(null), 1600);
+    return () => window.clearTimeout(t);
+  }, [piece.stunned, piece.hp, piece.blockHits, piece.dmgReduction, piece.bonusMove, piece.bonusAtk, piece.tempAtk, piece.dotImmunity]);
 
   if (minimal) {
     const miniBase = isPlayer
@@ -145,6 +206,29 @@ export default function PieceToken({ piece, revealLord, selected, targetable, ta
             ></span>
           )}
 
+          {/* 卡牌效果特效:封锁 / 解除 / 治疗 / 增益(图标 + 冲击环) */}
+          {fx && (
+            <>
+              <span
+                className={`absolute -inset-[12%] rounded-full pointer-events-none ${fx.hit ? 'piece-hit' : 'fx-ring'}`}
+                style={{ border: `2px solid ${FX_TONES[fx.tone].ring}`, boxShadow: `0 0 18px ${FX_TONES[fx.tone].glow}99` }}
+              ></span>
+              {!fx.hit && (
+                <span className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+                  <i
+                    className={`${fx.icon} fx-pop`}
+                    style={{
+                      fontSize: 'min(5vw,22px)',
+                      lineHeight: 1,
+                      color: FX_TONES[fx.tone].icon,
+                      textShadow: `0 0 10px ${FX_TONES[fx.tone].glow}`,
+                    }}
+                  ></i>
+                </span>
+              )}
+            </>
+          )}
+
           {/* 棋子本体(略缩小,给顶部 buff 留空间) */}
           <div
             className={`relative w-[72%] h-[72%] rounded-full flex items-center justify-center ${
@@ -190,11 +274,6 @@ export default function PieceToken({ piece, revealLord, selected, targetable, ta
             {piece.mode === 'defend' && piece.team === 'player' && (
               <span className="absolute -bottom-[34%] left-1/2 -translate-x-1/2 text-accent-200">
                 <i className="ri-shield-check-line w-3 h-3 flex items-center justify-center text-[min(2vw,10px)]"></i>
-              </span>
-            )}
-            {piece.mode === 'scout' && piece.team === 'player' && (
-              <span className="absolute -bottom-[34%] left-1/2 -translate-x-1/2 text-accent-200">
-                <i className="ri-radar-line w-3 h-3 flex items-center justify-center text-[min(2vw,10px)]"></i>
               </span>
             )}
           </div>

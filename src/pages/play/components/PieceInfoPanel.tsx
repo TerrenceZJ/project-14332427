@@ -30,8 +30,8 @@ export default function PieceInfoPanel({ piece, onClose, onIssue, ap, compact = 
   const showCommand = !!onIssue && isPlayer;
   const hasPath = piece.path.length > 0;
 
-  // 侦察姿态额外多消耗 1 点行动点
-  const confirmCost = piece.mode === 'scout' ? 2 : 1;
+  // 每次确认指令固定消耗 1 点行动点
+  const confirmCost = 1;
   const canAfford = ap >= confirmCost;
 
   const actedText =
@@ -39,10 +39,6 @@ export default function PieceInfoPanel({ piece, onClose, onIssue, ap, compact = 
       ? hasPath
         ? `移动 ${piece.path.length} 格后防御`
         : '原地防御'
-      : piece.mode === 'scout'
-      ? hasPath
-        ? `侦察移动 ${piece.path.length} 格`
-        : '原地侦察'
       : hasPath
       ? `移动 ${piece.path.length} 格后攻击`
       : '原地攻击';
@@ -138,10 +134,9 @@ export default function PieceInfoPanel({ piece, onClose, onIssue, ap, compact = 
       {/* 状态 */}
       {(piece.mode !== 'attack' || buffs.length > 0) && (
         <div className={`${compact ? 'mb-1.5' : 'mb-2.5'}`}>
-          {(piece.mode === 'defend' || piece.mode === 'scout') && (
+          {piece.mode === 'defend' && (
             <div className="flex flex-wrap gap-1 mb-1.5">
-              {piece.mode === 'defend' && <Tag text="防御中 · 本回合受伤害 -1" />}
-              {piece.mode === 'scout' && <Tag text="侦察中 · 额外视野" />}
+              <Tag text="防御中 · 本回合受伤害 -1" />
             </div>
           )}
           {buffs.length > 0 && (
@@ -174,7 +169,7 @@ export default function PieceInfoPanel({ piece, onClose, onIssue, ap, compact = 
               <div className={`flex items-center justify-between ${compact ? 'mb-1.5' : 'mb-2'}`}>
                 <span className="font-label text-[10px] text-foreground-600">指令</span>
                 <div className="inline-flex items-center gap-1 px-1 py-1 rounded-full bg-background-200/70 border border-background-300/50">
-                  {(['attack', 'defend', 'scout'] as Mode[]).map((m) => (
+                  {(['attack', 'defend'] as Mode[]).map((m) => (
                     <button
                       key={m}
                       onClick={() => onIssue!(piece.id, { mode: m })}
@@ -182,7 +177,7 @@ export default function PieceInfoPanel({ piece, onClose, onIssue, ap, compact = 
                         piece.mode === m ? 'bg-primary-500 text-background-50' : 'text-foreground-600 hover:text-foreground-900'
                       }`}
                     >
-                      {m === 'attack' ? '攻击' : m === 'defend' ? '防御' : '侦察'}
+                      {m === 'attack' ? '攻击' : '防御'}
                     </button>
                   ))}
                 </div>
@@ -191,23 +186,21 @@ export default function PieceInfoPanel({ piece, onClose, onIssue, ap, compact = 
               {/* 路径状态 / 行动点消耗 */}
               <div className={`flex items-center gap-2 ${compact ? 'flex-nowrap mb-1.5' : 'flex-wrap gap-y-0.5 mb-2'}`}>
                 <span className={`flex items-center gap-1.5 ${compact ? 'flex-1 min-w-0' : ''}`}>
-                  <i className={`${piece.mode === 'defend' ? 'ri-shield-line' : piece.mode === 'scout' ? 'ri-radar-line' : 'ri-route-line'} text-foreground-600 w-3.5 h-3.5 flex items-center justify-center shrink-0`}></i>
+                  <i className={`${piece.mode === 'defend' ? 'ri-shield-line' : 'ri-route-line'} text-foreground-600 w-3.5 h-3.5 flex items-center justify-center shrink-0`}></i>
                   <span className={`text-[11px] ${compact ? 'truncate' : ''} ${hasPath ? 'text-accent-300 font-heading' : 'text-foreground-600'}`}>
                     {piece.mode === 'defend'
                       ? hasPath
                         ? `待确认 · ${piece.path.length} 格 · 移动后防御`
                         : '点高亮格移动(留空原地防御)'
                       : hasPath
-                      ? `待确认 · ${piece.path.length} 格${piece.mode === 'scout' ? ' · 移动后侦察' : ''}`
-                      : piece.mode === 'scout'
-                      ? '点高亮格移动(留空原地侦察)'
+                      ? `待确认 · ${piece.path.length} 格`
                       : '点高亮格规划路径(留空原地攻击)'}
                   </span>
                 </span>
                 <span className="flex items-center gap-1.5 shrink-0">
                   <i className={`ri-flashlight-line w-3.5 h-3.5 flex items-center justify-center ${canAfford ? 'text-primary-300' : 'text-secondary-300'}`}></i>
                   <span className={`text-[11px] whitespace-nowrap ${canAfford ? 'text-foreground-600' : 'text-secondary-300'}`}>
-                    消耗 <span className={`font-heading ${canAfford ? 'text-foreground-950' : 'text-secondary-300'}`}>{confirmCost}</span> 行动点{piece.mode === 'scout' ? '(侦察 +1)' : ''}
+                    消耗 <span className={`font-heading ${canAfford ? 'text-foreground-950' : 'text-secondary-300'}`}>{confirmCost}</span> 行动点
                     {!canAfford && ` · 不足(现有 ${ap})`}
                   </span>
                 </span>
@@ -217,7 +210,7 @@ export default function PieceInfoPanel({ piece, onClose, onIssue, ap, compact = 
               {piece.mode === 'attack' && piece.atk > 0 && (
                 <div className={`text-[11px] ${piece.attackTarget ? 'text-accent-300' : 'text-foreground-500'} mb-1.5`}>
                   <i className={`${piece.attackTarget ? 'ri-checkbox-circle-fill' : 'ri-arrow-right-s-line'} w-3.5 h-3.5 flex items-center justify-center shrink-0 inline-flex mr-1`}></i>
-                  {piece.attackTarget ? '已锁定攻击目标' : '将自动攻击附近敌人'}
+                  {piece.attackTarget ? '已锁定攻击目标' : '点击敌方棋子锁定攻击目标'}
                 </div>
               )}
               {piece.heal > 0 && (
@@ -248,6 +241,7 @@ export default function PieceInfoPanel({ piece, onClose, onIssue, ap, compact = 
                 <button
                   onClick={() => onIssue!(piece.id, { confirm: true })}
                   disabled={!canAfford}
+                  data-tutorial="confirm"
                   className={`flex-[1.4] flex items-center justify-center gap-1 rounded-md text-xs bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap ${compact ? 'px-2 py-1.5' : 'px-2 py-2'}`}
                 >
                   <i className="ri-check-line w-3.5 h-3.5 flex items-center justify-center"></i>

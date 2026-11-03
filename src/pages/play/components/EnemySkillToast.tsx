@@ -22,7 +22,7 @@ const CAT_STYLE: Record<CardCategory, string> = {
   special: 'text-primary-300 border-primary-500/40 bg-primary-500/10',
 };
 
-const DURATION = 2600;
+const DURATION = 1500;
 
 /** 敌方使用技能时,在屏幕顶部弹出提示(纯展示层,不拦截点击) */
 export default function EnemySkillToast({ log }: { log: LogEntry[] }) {

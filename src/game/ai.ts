@@ -1,5 +1,6 @@
 import type { GameState, Piece, Pt } from './types';
 import { dist, inBounds, key, midOf } from './constants';
+import { enemyVisibleKeys } from './vision';
 
 /** AI 部署:右半场分散布置,并随机指定一只为灵主 */
 export function aiDeploy(s: GameState) {
@@ -33,7 +34,9 @@ export function aiDeploy(s: GameState) {
 export function aiCommand(state: GameState): GameState {
   const s = { ...state, pieces: state.pieces.map((p) => ({ ...p })) };
   const enemies = s.pieces.filter((p) => p.team === 'enemy' && p.alive && p.placed && p.stunned <= 0);
-  const targets = s.pieces.filter((p) => p.team === 'player' && p.alive && p.placed);
+  // 与玩家迷雾规则对称:敌方只能锁定自己视野内的目标,不再隔雾自动锁定
+  const vis = enemyVisibleKeys(s);
+  const targets = s.pieces.filter((p) => p.team === 'player' && p.alive && p.placed && vis.has(key(p.x, p.y)));
   if (!targets.length) return s;
 
   let ap = s.enemyAp;
@@ -59,10 +62,12 @@ export function aiCommand(state: GameState): GameState {
       const budget = e.move + e.bonusMove;
       e.path = planPath(e, best, s, budget);
       e.mode = 'attack';
+      e.attackTarget = best.id;
       e.acted = true;
     } else {
       e.path = [];
       e.mode = 'attack';
+      e.attackTarget = best.id;
       e.acted = true;
     }
   }

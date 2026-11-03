@@ -11,6 +11,8 @@ interface Props {
   onMakeLord: (id: string) => void;
   onRandomize: () => void;
   onReopenSummon: () => void;
+  /** 第 0 关引导:隐藏随机布阵等辅助信息 */
+  intro?: boolean;
 }
 
 const META: Record<CardCategory, { label: string; text: string; bg: string; border: string }> = {
@@ -27,6 +29,7 @@ export default function MobilePieceRail({
   onMakeLord,
   onRandomize,
   onReopenSummon,
+  intro = false,
 }: Props) {
   const railRef = useRef<HTMLDivElement>(null);
   const { dragging, consumeClickSuppression, handlers } = useDragScroll<HTMLDivElement>(railRef);
@@ -169,13 +172,15 @@ export default function MobilePieceRail({
           <span className="font-label text-[10px] text-foreground-600 whitespace-nowrap">
             {placedCount}/{state.lineupSize} 已部署
           </span>
-          <button
-            onClick={onRandomize}
-            className="ml-auto px-3 py-2 rounded-md text-xs border border-background-300 text-foreground-800 hover:border-accent-400 hover:text-accent-300 cursor-pointer whitespace-nowrap flex items-center justify-center gap-1"
-          >
-            <i className="ri-shuffle-line w-3.5 h-3.5 flex items-center justify-center"></i>
-            随机布阵
-          </button>
+          {!intro && (
+            <button
+              onClick={onRandomize}
+              className="ml-auto px-3 py-2 rounded-md text-xs border border-background-300 text-foreground-800 hover:border-accent-400 hover:text-accent-300 cursor-pointer whitespace-nowrap flex items-center justify-center gap-1"
+            >
+              <i className="ri-shuffle-line w-3.5 h-3.5 flex items-center justify-center"></i>
+              随机布阵
+            </button>
+          )}
         </div>
       </div>
     </div>
