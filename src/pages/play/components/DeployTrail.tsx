@@ -7,9 +7,9 @@ export default function DeployTrail({ trail, cols, rows }: { trail: Pt[]; cols: 
   return (
     <>
       {trail.slice(0, -1).map((p, i) => {
-        const a = { x: ((p.x + 0.5) / cols) * 100, y: ((p.y + 0.5) / rows) * 100 };
+        const a = { x: p.x + 0.5, y: p.y + 0.5 };
         const q = trail[i + 1];
-        const b = { x: ((q.x + 0.5) / cols) * 100, y: ((q.y + 0.5) / rows) * 100 };
+        const b = { x: q.x + 0.5, y: q.y + 0.5 };
         const dx = b.x - a.x;
         const dy = b.y - a.y;
         const len = Math.sqrt(dx * dx + dy * dy);
@@ -21,9 +21,9 @@ export default function DeployTrail({ trail, cols, rows }: { trail: Pt[]; cols: 
             key={i}
             className="absolute pointer-events-none border-t-2 border-dashed border-accent-400/70"
             style={{
-              left: `${midX}%`,
-              top: `${midY}%`,
-              width: `${len}%`,
+              left: `${(midX / cols) * 100}%`,
+              top: `${(midY / rows) * 100}%`,
+              width: `${(len / cols) * 100}%`,
               transform: `translate(-50%, -50%) rotate(${angle}rad)`,
               zIndex: 8,
             }}

@@ -451,10 +451,10 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
               <Fragment key={`line-${p.id}`}>
                 {pts.slice(0, -1).map((a, i) => {
                   const b = pts[i + 1];
-                  const ax = ((a.x + 0.5) / cols) * 100;
-                  const ay = ((a.y + 0.5) / rows) * 100;
-                  const bx = ((b.x + 0.5) / cols) * 100;
-                  const by = ((b.y + 0.5) / rows) * 100;
+                  const ax = a.x + 0.5;
+                  const ay = a.y + 0.5;
+                  const bx = b.x + 0.5;
+                  const by = b.y + 0.5;
                   const dx = bx - ax;
                   const dy = by - ay;
                   const len = Math.sqrt(dx * dx + dy * dy);
@@ -464,9 +464,9 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
                       key={`seg-${i}`}
                       className="absolute pointer-events-none border-t-2 border-dashed border-primary-400/70"
                       style={{
-                        left: `${(ax + bx) / 2}%`,
-                        top: `${(ay + by) / 2}%`,
-                        width: `${len}%`,
+                        left: `${(((ax + bx) / 2) / cols) * 100}%`,
+                        top: `${(((ay + by) / 2) / rows) * 100}%`,
+                        width: `${(len / cols) * 100}%`,
                         transform: `translate(-50%, -50%) rotate(${angle}rad)`,
                         zIndex: 8,
                       }}
@@ -505,7 +505,7 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
             <PieceToken
               key={p.id}
               piece={p}
-                revealLord={state.skipCards ? p.lordRevealed : p.team === 'player' || p.lordRevealed}
+                revealLord={!state.lordBattle ? p.lordRevealed : p.team === 'player' || p.lordRevealed}
               selected={p.id === selectedId}
               targetable={targetPieceIds.has(p.id)}
               targeted={selectedTargetIds.has(p.id)}
@@ -728,7 +728,7 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
               <PieceToken
                 key={p.id}
                 piece={p}
-              revealLord={state.skipCards ? p.lordRevealed : p.team === 'player' || p.lordRevealed}
+              revealLord={!state.lordBattle ? p.lordRevealed : p.team === 'player' || p.lordRevealed}
                 selected={false}
                 targetable={false}
                 faded={false}

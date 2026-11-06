@@ -88,7 +88,7 @@ function markRevealed(s: GameState) {
 
 export function createGame(cols: number = COLS, rows: number = ROWS, deployGap: number = DEPLOY_GAP, lineupSize: number = LINEUP_SIZE): GameState {
   return {
-    phase: 'deploy', turn: 0, cols, rows, deployGap, lineupSize, skipCards: false, pieces: [], vision: [], ap: START_AP, enemyAp: START_AP,
+    phase: 'deploy', turn: 0, cols, rows, deployGap, lineupSize, skipCards: false, lordBattle: true, pieces: [], vision: [], ap: START_AP, enemyAp: START_AP,
     deck: shuffle(CARDS.map((c) => c.id)),
     hand: [],
     lastDrawnCardId: null,
@@ -96,6 +96,7 @@ export function createGame(cols: number = COLS, rows: number = ROWS, deployGap: 
     enemyDeck: shuffle(CARDS.map((c) => c.id)),
     enemyHand: [],
     enemyLineupPreset: null,
+    enemyLordPreset: null,
     enemyHpOverride: null,
     dotZones: [],
     winner: null, selectedId: null,
@@ -118,6 +119,12 @@ export interface LevelPreset {
   skipCards?: boolean;
   /** 敌方棋子血量覆盖(教程第 0 关敌方仅 1 血) */
   enemyHp?: number;
+  /** 预放置的己方棋子(教程第 1 关:坦克已在场上,仅剩战士需手动放置) */
+  prePlaced?: { cardId: string; x: number; y: number }[];
+  /** 是否启用灵主机制(第 0 关关闭,其余默认开启) */
+  lordBattle?: boolean;
+  /** 敌方灵主卡牌 id(默认随机指定) */
+  enemyLord?: string;
 }
 
 /** 创建教程关卡:固定棋盘尺寸与双方阵容,玩家只需在部署阶段摆放位置 */
@@ -126,9 +133,20 @@ export function createLevelGame(level: LevelPreset): GameState {
   const s = createGame(level.cols, level.rows, level.deployGap, size);
   s.lineup = [...level.lineup];
   s.skipCards = !!level.skipCards;
+  s.lordBattle = level.lordBattle ?? true;
   s.enemyHpOverride = level.enemyHp ?? null;
   s.pieces = level.lineup.map((id) => makePiece(CARDS_BY_ID[id].owner, 'player', id));
   s.enemyLineupPreset = [...level.enemyLineup];
+  s.enemyLordPreset = level.enemyLord ?? null;
+  for (const pp of level.prePlaced ?? []) {
+    const p = s.pieces.find((q) => q.team === 'player' && q.fromCard === pp.cardId);
+    if (p) {
+      p.x = pp.x;
+      p.y = pp.y;
+      p.placed = true;
+      s.deployTrail = [...s.deployTrail, { x: pp.x, y: pp.y }];
+    }
+  }
   s.log = [{
     id: ++logSeq,
     text: size > 1
@@ -262,9 +280,7 @@ export function autoDeploy(state: GameState): GameState {
   const mine = s.pieces.filter((p) => p.team === 'player');
   mine.forEach((p) => { p.x = -1; p.y = -1; p.placed = false; p.isLord = false; });
   const slots: { x: number; y: number }[] = [];
-  const yMin = s.rows > 1 ? 1 : 0;
-  const yMax = s.rows > 1 ? s.rows - 1 : s.rows;
-  for (let y = yMin; y < yMax; y++) for (let x = 1; x < midOf(s.cols) - s.deployGap; x++) slots.push({ x, y });
+  for (let y = 0; y < s.rows; y++) for (let x = 1; x < midOf(s.cols) - s.deployGap; x++) slots.push({ x, y });
   slots.sort(() => Math.random() - 0.5);
   mine.forEach((p, i) => {
     const slot = slots[i % slots.length];
@@ -693,6 +709,15 @@ export function startBattle(state: GameState): GameState {
   s.deck = s.deck.filter((id) => !s.lineup.includes(id));
 
   aiDeploy(s);
+  // 教程关卡可指定敌方灵主:亮明其身份,便于玩家识别胜负目标
+  if (s.enemyLordPreset) {
+    const lord = s.pieces.find((p) => p.team === 'enemy' && p.fromCard === s.enemyLordPreset);
+    if (lord) {
+      s.pieces.forEach((p) => { if (p.team === 'enemy') p.isLord = false; });
+      lord.isLord = true;
+      lord.lordRevealed = true;
+    }
+  }
   s.turn = 1;
   s.ap = START_AP;
   s.enemyAp = START_AP;
@@ -882,7 +907,9 @@ export function autoCommand(state: GameState, style: AutoCommandStyle = 'aggress
     // aggressive / focusLord:主动压上
     if (best) {
       const d = dist(a.x, a.y, best.x, best.y);
-      a.path = d > a.range ? planPath(a, best, s, moveBudget) : [];
+      // 目标处于无敌护盾时不再原地空打:未贴身则向前逼近/包抄,为下一回合破盾击杀铺路
+      const approachShielded = best.shieldTurns > 0 && d > 1;
+      a.path = d > a.range || approachShielded ? planPath(a, best, s, moveBudget) : [];
       a.attackTarget = best.id;
     } else if (style === 'focusLord') {
       a.path = planPath(a, { x: s.cols - 1, y: Math.floor(s.rows / 2) }, s, moveBudget);
@@ -1135,6 +1162,7 @@ export function executeTurn(input: GameState): TurnFrame[] {
   const heals = new Map<string, number>();
   const attackEvents: TurnEvent[] = [];
   const healEvents: TurnEvent[] = [];
+  const attacks: { targetId: string; amount: number }[] = [];
   for (const p of s.pieces) {
     if (!p.alive || !p.placed || p.mode === 'defend' || p.stunned > 0) continue;
     if (p.atk <= 0) {
@@ -1162,14 +1190,16 @@ export function executeTurn(input: GameState): TurnFrame[] {
       t = s.pieces.find((o) => o.id === p.attackTarget && o.alive && o.placed && o.team !== p.team && dist(p.x, p.y, o.x, o.y) <= p.range);
     }
     if (!t) continue;
-    // 无敌护盾:完全免疫
+    // 无敌护盾:完全免疫(仍播放攻击动画,让玩家看到"出手但被无敌挡下")
     if (t.shieldTurns > 0) {
+      attackEvents.push({ type: 'attack', x: t.x, y: t.y, fx: p.x, fy: p.y, amount: effAtk });
       attackEvents.push({ type: 'shield', x: t.x, y: t.y, text: '无敌' });
       continue;
     }
-    // 格挡:抵挡本次攻击
+    // 格挡:抵挡本次攻击(仍播放攻击动画)
     if (t.blockHits > 0) {
       t.blockHits -= 1;
+      attackEvents.push({ type: 'attack', x: t.x, y: t.y, fx: p.x, fy: p.y, amount: effAtk });
       attackEvents.push({ type: 'shield', x: t.x, y: t.y, text: '格挡' });
       continue;
     }
@@ -1192,6 +1222,7 @@ export function executeTurn(input: GameState): TurnFrame[] {
       continue;
     }
     dmg.set(t.id, (dmg.get(t.id) || 0) + amount);
+    attacks.push({ targetId: t.id, amount });
     attackEvents.push({ type: 'attack', x: t.x, y: t.y, fx: p.x, fy: p.y, amount });
   }
 
@@ -1223,12 +1254,11 @@ export function executeTurn(input: GameState): TurnFrame[] {
     pushFrame(100, damageEvents);
   }
 
-  // 6) 死亡帧
+  // 6) 死亡帧:逐次结算伤害,灵主重生获得的无敌护盾会挡下本回合的溢出伤害
   const deathEvents: TurnEvent[] = [];
-  for (const p of s.pieces) {
-    if (!p.alive) continue;
-    const d = dmg.get(p.id);
-    if (d) dealDirectDamage(s, p, d, deathEvents);
+  for (const atk of attacks) {
+    const p = s.pieces.find((o) => o.id === atk.targetId);
+    if (p) dealDirectDamage(s, p, atk.amount, deathEvents);
   }
   if (deathEvents.length > 0) {
     pushFrame(1500, deathEvents);
@@ -1276,8 +1306,8 @@ export function executeTurn(input: GameState): TurnFrame[] {
 }
 
 function resolveDeath(s: GameState, p: Piece, events: TurnEvent[]) {
-  // 教程第 0 关(无卡牌)不启用灵主重生:敌方 1 血可一击消灭
-  if (!s.skipCards && p.isLord && !p.revived) {
+  // 第 0 关(无卡牌,不启用灵主机制)不触发灵主重生
+  if (s.lordBattle && p.isLord && !p.revived) {
     p.revived = true;
     p.lordRevealed = true;
     p.hp = 1;
@@ -1299,17 +1329,17 @@ function resolveDeath(s: GameState, p: Piece, events: TurnEvent[]) {
   ], p.team, 'damage');
 }
 
-/** 判定胜负:任一方灵主阵亡即结束(无卡牌关卡则任一灵兽被消灭即结束) */
+/** 判定胜负:任一方灵主阵亡即结束 */
 function checkVictory(s: GameState): boolean {
   const pLord = s.pieces.find((p) => p.team === 'player' && p.isLord);
   const eLord = s.pieces.find((p) => p.team === 'enemy' && p.isLord);
   if (!pLord || !pLord.alive) {
     s.winner = 'enemy'; s.phase = 'gameover';
-    pushLog(s, s.skipCards ? '你的灵兽被消灭…… 战败。' : '你的灵主已陨落…… 战败。', 'enemy', 'death');
+    pushLog(s, s.lordBattle ? '你的灵主已陨落…… 战败。' : '你的灵兽被消灭…… 战败。', 'enemy', 'death');
     return true;
   } else if (!eLord || !eLord.alive) {
     s.winner = 'player'; s.phase = 'gameover';
-    pushLog(s, s.skipCards ? '敌方灵兽被消灭!你赢了!' : '敌方灵主陨落!你赢得了圣战!', 'player', 'death');
+    pushLog(s, s.lordBattle ? '敌方灵主陨落!你赢得了圣战!' : '敌方灵兽被消灭!你赢了!', 'player', 'death');
     return true;
   }
   return false;

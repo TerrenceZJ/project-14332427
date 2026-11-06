@@ -8,9 +8,7 @@ export function aiDeploy(s: GameState) {
   mine.forEach((p) => { p.x = -1; p.y = -1; p.placed = false; p.isLord = false; });
 
   const slots: { x: number; y: number }[] = [];
-  const yMin = s.rows > 1 ? 1 : 0;
-  const yMax = s.rows > 1 ? s.rows - 1 : s.rows;
-  for (let y = yMin; y < yMax; y++) for (let x = midOf(s.cols) + s.deployGap; x < s.cols - 1; x++) slots.push({ x, y });
+  for (let y = 0; y < s.rows; y++) for (let x = midOf(s.cols) + s.deployGap; x < s.cols - 1; x++) slots.push({ x, y });
   slots.sort(() => Math.random() - 0.5);
 
   mine.forEach((p, i) => {

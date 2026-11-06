@@ -64,6 +64,8 @@ interface Props {
   onConfirmCard: () => void;
   onCancelCard: () => void;
   onPhaseTimeout: () => void;
+  /** 结束当前阶段(抽卡 / 指令);指令阶段结束时会先校验是否有剩余行动点 */
+  onAdvance: () => void;
   onOpenEnemyDeck: () => void;
   onReopenSummon: () => void;
   /** 第 0 关引导:隐藏回合 / 行动点 / 己方敌方 / 牌库 / 日志 / 倒计时等辅助信息 */
@@ -92,6 +94,7 @@ export default function MobileBattleView({
   onConfirmCard,
   onCancelCard,
   onPhaseTimeout,
+  onAdvance,
   onOpenEnemyDeck,
   onReopenSummon,
   intro = false,
@@ -160,8 +163,8 @@ export default function MobileBattleView({
     }
   }, [pendingCardId]);
 
-  // 阶段倒计时(部署 60s / 抽卡 120s / 指令 60s);第 0 关引导不设时间限制
-  const countdown = (isDeploy || canPlay || isCommand) && !intro;
+  // 已去除阶段倒计时:所有阶段均不设时间限制
+  const countdown = false;
   // 本阶段总时长(用于倒计时进度环的比例)
   const phaseTotal = isDeploy ? 60 : state.phase === 'card1' ? 120 : 60;
   const [count, setCount] = useState(60);
@@ -376,31 +379,33 @@ export default function MobileBattleView({
           ) : (
           <>
           {/* 自动指令视图 */}
-          <div>
-            <div className="font-label text-[9px] text-foreground-600 mb-1">自动指令风格</div>
-            <div className="flex items-center gap-0.5 p-0.5 rounded-full bg-background-200/70 border border-background-300/50">
-              {AUTO_STYLES.map((o) => (
-                <button
-                  key={o.id}
-                  onClick={() => onAutoStyle(o.id)}
-                  disabled={b.busy}
-                  className={`flex-1 flex items-center justify-center gap-0.5 px-1 py-1 rounded-full font-label text-[10px] whitespace-nowrap transition-colors cursor-pointer disabled:opacity-50 ${
-                    autoStyle === o.id ? 'bg-primary-500 text-background-50' : 'text-foreground-600'
-                  }`}
-                >
-                  {o.label}
-                </button>
-              ))}
+          <div data-tutorial="auto-command" className="flex flex-col gap-2">
+            <div>
+              <div className="font-label text-[9px] text-foreground-600 mb-1">自动指令风格</div>
+              <div className="flex items-center gap-0.5 p-0.5 rounded-full bg-background-200/70 border border-background-300/50">
+                {AUTO_STYLES.map((o) => (
+                  <button
+                    key={o.id}
+                    onClick={() => onAutoStyle(o.id)}
+                    disabled={b.busy}
+                    className={`flex-1 flex items-center justify-center gap-0.5 px-1 py-1 rounded-full font-label text-[10px] whitespace-nowrap transition-colors cursor-pointer disabled:opacity-50 ${
+                      autoStyle === o.id ? 'bg-primary-500 text-background-50' : 'text-foreground-600'
+                    }`}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
             </div>
+            <button
+              onClick={() => b.autoCommand(autoStyle)}
+              disabled={b.busy}
+              className="w-full flex items-center justify-center gap-1.5 px-2 py-2 rounded-md font-label text-xs border border-accent-500/50 text-accent-300 hover:bg-accent-500/10 disabled:opacity-50 cursor-pointer whitespace-nowrap"
+            >
+              <i className="ri-magic-line w-3.5 h-3.5 flex items-center justify-center"></i>
+              一键自动指令
+            </button>
           </div>
-          <button
-            onClick={() => b.autoCommand(autoStyle)}
-            disabled={b.busy}
-            className="w-full flex items-center justify-center gap-1.5 px-2 py-2 rounded-md font-label text-xs border border-accent-500/50 text-accent-300 hover:bg-accent-500/10 disabled:opacity-50 cursor-pointer whitespace-nowrap"
-          >
-            <i className="ri-magic-line w-3.5 h-3.5 flex items-center justify-center"></i>
-            一键自动指令
-          </button>
           <button
             onClick={() => b.confirmAll()}
             disabled={b.busy || !hasDraftCommands}
@@ -462,7 +467,11 @@ export default function MobileBattleView({
         </button>
         <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-hidden">
           <span className="font-heading text-xs text-foreground-950 whitespace-nowrap shrink-0">{phaseLabel[state.phase]}</span>
-          {!intro && <BattleStatusBar state={state} />}
+          {!intro && (
+            <span data-tutorial="status-bar">
+              <BattleStatusBar state={state} />
+            </span>
+          )}
         </div>
         {countdown ? (
           <span className={`shrink-0 font-heading text-xs tabular-nums ${count <= 10 ? 'text-secondary-400' : 'text-foreground-900'}`}>
@@ -575,6 +584,7 @@ export default function MobileBattleView({
               <button
                 key={t.id}
                 onClick={() => pickTab(t.id)}
+                data-tutorial={t.id === 'log' ? 'log-tab' : undefined}
                 className={`flex-1 min-w-0 flex items-center justify-center gap-1.5 px-1 py-1 rounded-full font-label text-[11px] whitespace-nowrap transition-colors cursor-pointer ${
                   validTab === t.id && open ? 'bg-primary-500 text-background-50' : 'text-foreground-600'
                 }`}
@@ -654,7 +664,7 @@ export default function MobileBattleView({
           ) : canEnd ? (
             intro ? (
               <button
-                onClick={b.advance}
+                onClick={onAdvance}
                 disabled={b.busy}
                 data-tutorial="end-card"
                 className="shrink-0 px-2.5 py-1.5 rounded-md font-label text-[11px] bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
@@ -664,7 +674,7 @@ export default function MobileBattleView({
             ) : (
               <CountdownRingFrame remaining={count} total={phaseTotal} warnAt={10} radius={6} className="shrink-0">
                 <button
-                  onClick={b.advance}
+                  onClick={onAdvance}
                   disabled={b.busy}
                   data-tutorial="end-card"
                   className="px-2.5 py-1.5 rounded-md font-label text-[11px] bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"

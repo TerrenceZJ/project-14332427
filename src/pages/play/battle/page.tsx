@@ -48,6 +48,7 @@ export default function BattlePage() {
   const [healChoice, setHealChoice] = useState<HealChoice | null>(null);
   const [confirmPlay, setConfirmPlay] = useState<Pending | null>(null);
   const [autoStyle, setAutoStyle] = useState<AutoCommandStyle>('aggressive');
+  const [endCommandConfirm, setEndCommandConfirm] = useState(false);
   const card1SeenRef = useRef(false);
   const noticeTimer = useRef<number | null>(null);
   const drawRevealTimer = useRef<number | null>(null);
@@ -295,6 +296,20 @@ export default function BattlePage() {
     }, 1500);
   };
 
+  // 指令阶段结束:若仍有剩余行动点,先弹窗提醒(教程关卡不拦截,直接推进)
+  const handleEndPhase = () => {
+    if (state.phase === 'command' && state.ap > 0 && level?.id !== 0) {
+      setEndCommandConfirm(true);
+      return;
+    }
+    b.advance();
+  };
+
+  // 还有多少只己方灵兽尚未确认指令(未 acted)
+  const unconfirmedPieces = state.phase === 'command'
+    ? state.pieces.filter((p) => p.team === 'player' && p.placed && p.alive && !p.acted).length
+    : 0;
+
   const paused = (state.phase === 'deploy' && summonOpen) || (state.phase === 'command' && enemyDeckOpen);
 
   const choiceTarget = healChoice ? state.pieces.find((p) => p.id === healChoice.pieceId) : null;
@@ -413,6 +428,7 @@ export default function BattlePage() {
         onConfirmCard={confirmPendingCard}
         onCancelCard={() => { setPending(null); setConfirmPlay(null); }}
         onPhaseTimeout={handlePhaseTimeout}
+        onAdvance={handleEndPhase}
         onOpenEnemyDeck={() => setEnemyDeckOpen(true)}
         onReopenSummon={() => setSummonOpen(true)}
         intro={level?.id === 0}
@@ -533,6 +549,41 @@ export default function BattlePage() {
             <p className="text-sm text-foreground-700 text-center leading-relaxed">
               时间到，即将自动进入下一阶段…
             </p>
+          </div>
+        </div>
+      )}
+
+      {endCommandConfirm && (
+        <div className="fixed inset-0 z-[85] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-background-950/70 backdrop-blur-sm" onClick={() => setEndCommandConfirm(false)}></div>
+          <div className="relative rune-border rounded-lg w-full max-w-xs p-5 bg-background-100">
+            <div className="text-center mb-4">
+              <div className="w-12 h-12 mx-auto mb-2 flex items-center justify-center rounded-full bg-primary-500/15 border border-primary-500/40 text-primary-300">
+                <i className="ri-alert-line text-2xl w-6 h-6 flex items-center justify-center"></i>
+              </div>
+              <h2 className="font-heading text-lg text-foreground-950">结束指令确认</h2>
+              <div className="text-xs text-foreground-600 mt-1 leading-relaxed">
+                {state.ap > 0 && <p>还有 {state.ap} 点行动点未使用。</p>}
+                {unconfirmedPieces > 0 && <p>还有 {unconfirmedPieces} 只灵兽未确认操作。</p>}
+                <p>是否确认进入下一步？</p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => { setEndCommandConfirm(false); b.advance(); }}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-md font-label text-sm bg-primary-500 text-background-50 hover:bg-primary-600 cursor-pointer"
+              >
+                <i className="ri-arrow-right-line w-4 h-4 flex items-center justify-center"></i>
+                确认进入下一步
+              </button>
+              <button
+                onClick={() => setEndCommandConfirm(false)}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md font-label text-sm border border-background-300 text-foreground-700 hover:text-foreground-950 hover:border-background-400 cursor-pointer"
+              >
+                <i className="ri-arrow-go-back-line w-4 h-4 flex items-center justify-center"></i>
+                继续操作
+              </button>
+            </div>
           </div>
         </div>
       )}

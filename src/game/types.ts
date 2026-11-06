@@ -135,6 +135,10 @@ export interface GameState {
   lineupSize: number;
   /** 是否跳过卡牌阶段(教程第 0 关无卡牌,直接进入指令阶段) */
   skipCards: boolean;
+  /** 是否启用灵主机制(灵主重生 + 灵主胜负判定)。第 0 关关闭,其余默认开启 */
+  lordBattle: boolean;
+  /** 预设敌方灵主卡牌 id(教程关卡指定敌方某只棋子为灵主) */
+  enemyLordPreset: string | null;
   enemyDeck: string[];
   enemyHand: string[];
   /** 预设敌方出战卡牌(教程关卡固定敌方阵容;为空则按常规随机) */
