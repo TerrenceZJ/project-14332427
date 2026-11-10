@@ -15,24 +15,26 @@ const BUBBLE_H = 190;
 
 function bubbleStyle(rect: DOMRect | null): CSSProperties {
   if (!rect) return {};
-  const margin = 14;
+  const margin = 12;
   const vw = window.innerWidth;
   const vh = window.innerHeight;
+  const w = Math.min(BUBBLE_W, vw - 16);
 
-  const left = Math.min(Math.max(rect.left + rect.width / 2 - BUBBLE_W / 2, 8), vw - BUBBLE_W - 8);
+  const left = Math.min(Math.max(rect.left + rect.width / 2 - w / 2, 8), vw - w - 8);
 
-  // 大目标(如棋盘):气泡放屏幕底部,避免遮挡目标中心或被挤出屏幕
+  // 大目标(如棋盘):气泡放屏幕顶部,避免遮挡底部的操作按钮
   if (rect.height > 260) {
-    return { left, top: Math.max(8, vh - BUBBLE_H - 16), width: BUBBLE_W };
+    return { left, top: 8, width: w };
   }
 
-  let top = rect.bottom + margin;
-  if (top + BUBBLE_H > vh - 8) {
-    top = rect.top - margin - BUBBLE_H;
+  // 小目标:优先放目标上方(底部有「确认 / 结束指令」等按钮),上方放不下再放下方
+  let top = rect.top - margin - BUBBLE_H;
+  if (top < 8) {
+    top = rect.bottom + margin;
+    if (top + BUBBLE_H > vh - 8) top = Math.max(8, vh - BUBBLE_H - 8);
   }
-  if (top < 8) top = 8;
 
-  return { left, top, width: BUBBLE_W };
+  return { left, top, width: w };
 }
 
 const block = (e: React.MouseEvent) => e.stopPropagation();
@@ -82,16 +84,16 @@ export default function TutorialOverlay({ step, stepIndex, totalSteps, onNext, o
 
   const bubble = (
     <div
-      className="absolute z-[102] rounded-lg rune-border bg-background-100/95 backdrop-blur px-4 py-3 shadow-xl pointer-events-auto"
+      className="absolute z-[102] rounded-lg rune-border bg-background-100/95 backdrop-blur px-3 py-2.5 shadow-xl pointer-events-auto"
       style={rect ? bubbleStyle(rect) : { left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: BUBBLE_W }}
     >
-      <div className="flex items-center gap-2 mb-1.5">
+      <div className="flex items-center gap-2 mb-1">
         <span className="font-label text-[9px] text-primary-400">TUTORIAL</span>
         <span className="ml-auto font-label text-[9px] text-foreground-600">{stepIndex + 1}/{totalSteps}</span>
       </div>
-      <h3 className="font-heading text-base text-foreground-950 leading-snug">{step.title}</h3>
-      <p className="mt-1.5 text-xs text-foreground-700 leading-relaxed">{step.body}</p>
-      <div className="mt-3 flex items-center gap-2">
+      <h3 className="font-heading text-sm text-foreground-950 leading-snug">{step.title}</h3>
+      <p className="mt-1 text-xs text-foreground-700 leading-snug">{step.body}</p>
+      <div className="mt-2 flex items-center gap-2">
         <button
           onClick={onSkip}
           className="px-2.5 py-1.5 rounded-md text-xs border border-background-300 text-foreground-600 hover:text-foreground-900 cursor-pointer"

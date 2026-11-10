@@ -35,9 +35,24 @@ export function aiCommand(state: GameState): GameState {
   // 与玩家迷雾规则对称:敌方只能锁定自己视野内的目标,不再隔雾自动锁定
   const vis = enemyVisibleKeys(s);
   const targets = s.pieces.filter((p) => p.team === 'player' && p.alive && p.placed && vis.has(key(p.x, p.y)));
-  if (!targets.length) return s;
 
   let ap = s.enemyAp;
+
+  // 看不到任何玩家棋子时:主动向玩家半场推进揭开迷雾,避免双方僵持不动
+  if (!targets.length) {
+    for (const e of enemies) {
+      if (e.mode === 'defend') continue;
+      if (ap < 1) continue; // 无行动点,无法移动
+      ap -= 1;
+      const budget = e.move + e.bonusMove;
+      e.path = planPath(e, { x: 0, y: e.y }, s, budget);
+      e.mode = 'attack';
+      e.acted = true;
+    }
+    s.enemyAp = ap;
+    return s;
+  }
+
   const revealedLord = targets.find((t) => t.isLord && t.lordRevealed);
 
   for (const e of enemies) {

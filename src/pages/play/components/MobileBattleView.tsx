@@ -504,7 +504,7 @@ export default function MobileBattleView({
           <div className={`absolute left-0 right-0 bottom-0 z-40 ${validTab === 'hand' ? 'pointer-events-none' : ''}`}>
             <div
               ref={overlayRef}
-              className={`${validTab === 'hand' ? 'hand-overlay' : validTab === 'log' ? 'h-[33vh]' : isCmdPiece ? '' : 'h-[230px]'} px-2 pt-2 pb-2 ${
+              className={`${validTab === 'hand' ? 'hand-overlay' : validTab === 'log' ? 'h-[33vh]' : isCmdPiece ? '' : 'h-[190px]'} px-2 pt-2 pb-2 ${
                 validTab === 'hand' ? '' : 'rounded-t-xl border-t border-background-200 bg-background-100/95 backdrop-blur'
               }`}
             >
@@ -572,12 +572,12 @@ export default function MobileBattleView({
         <button
           onClick={() => setOpen((o) => !o)}
           aria-label="展开或收起面板"
-          className="w-full h-4 flex items-center justify-center cursor-pointer"
+          className="w-full h-3 flex items-center justify-center cursor-pointer"
         >
-          <span className="w-10 h-1 rounded-full bg-background-400/70"></span>
+          <span className="w-8 h-1 rounded-full bg-background-400/70"></span>
         </button>
 
-        <div className="px-2 pb-1.5 flex items-center gap-1.5">
+        <div className="px-2 pb-1 flex items-center gap-1">
           {/* 标签切换 */}
           <div className="flex-1 min-w-0 flex items-center gap-1 p-0.5 rounded-full bg-background-200/70 border border-background-300/50">
             {tabs.map((t) => (
@@ -585,7 +585,7 @@ export default function MobileBattleView({
                 key={t.id}
                 onClick={() => pickTab(t.id)}
                 data-tutorial={t.id === 'log' ? 'log-tab' : undefined}
-                className={`flex-1 min-w-0 flex items-center justify-center gap-1.5 px-1 py-1 rounded-full font-label text-[11px] whitespace-nowrap transition-colors cursor-pointer ${
+                className={`flex-1 min-w-0 flex items-center justify-center gap-1 px-1 py-0.5 rounded-full font-label text-[10px] whitespace-nowrap transition-colors cursor-pointer ${
                   validTab === t.id && open ? 'bg-primary-500 text-background-50' : 'text-foreground-600'
                 }`}
               >
@@ -645,7 +645,7 @@ export default function MobileBattleView({
                 onClick={b.start}
                 disabled={!deployReady}
                 data-tutorial="deploy-start"
-                className="shrink-0 px-2.5 py-1.5 rounded-md font-label text-[11px] bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+                className="shrink-0 px-2.5 py-1 rounded-md font-label text-[10px] bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
               >
                 {deployHint}
               </button>
@@ -655,7 +655,7 @@ export default function MobileBattleView({
                   onClick={b.start}
                   disabled={!deployReady}
                   data-tutorial="deploy-start"
-                  className="px-2.5 py-1.5 rounded-md font-label text-[11px] bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+                  className="px-2.5 py-1 rounded-md font-label text-[10px] bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
                 >
                   {deployHint}
                 </button>
@@ -667,7 +667,7 @@ export default function MobileBattleView({
                 onClick={onAdvance}
                 disabled={b.busy}
                 data-tutorial="end-card"
-                className="shrink-0 px-2.5 py-1.5 rounded-md font-label text-[11px] bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+                className="shrink-0 px-2.5 py-1 rounded-md font-label text-[10px] bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
               >
                 {b.busy ? '结算中…' : confirmLabel[state.phase]}
               </button>
@@ -677,7 +677,7 @@ export default function MobileBattleView({
                   onClick={onAdvance}
                   disabled={b.busy}
                   data-tutorial="end-card"
-                  className="px-2.5 py-1.5 rounded-md font-label text-[11px] bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+                  className="px-2.5 py-1 rounded-md font-label text-[10px] bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
                 >
                   {b.busy ? '结算中…' : confirmLabel[state.phase]}
                 </button>
@@ -688,7 +688,7 @@ export default function MobileBattleView({
 
         <div
           className="overflow-hidden transition-[height] duration-300 ease-out"
-          style={{ height: open && validTab === 'piece' ? 230 : 0 }}
+          style={{ height: open && validTab === 'piece' ? 210 : 0 }}
         >
           <div className="h-full px-2 pb-2">{drawerContent}</div>
         </div>

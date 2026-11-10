@@ -373,6 +373,7 @@ export default function BattlePage() {
     moveLen: state.pieces.filter((p) => p.team === 'player').reduce((n, p) => n + p.path.length, 0),
     acted: state.pieces.filter((p) => p.team === 'player' && p.acted).length,
     targetCount: state.pieces.filter((p) => p.team === 'player' && p.attackTarget).length,
+    healCount: state.pieces.filter((p) => p.team === 'player' && p.healTarget).length,
     phase: state.phase,
   });
 
@@ -384,6 +385,7 @@ export default function BattlePage() {
       moveLen: state.pieces.filter((p) => p.team === 'player').reduce((n, p) => n + p.path.length, 0),
       acted: state.pieces.filter((p) => p.team === 'player' && p.acted).length,
       targetCount: state.pieces.filter((p) => p.team === 'player' && p.attackTarget).length,
+      healCount: state.pieces.filter((p) => p.team === 'player' && p.healTarget).length,
       phase: state.phase,
     };
     prevKeyRef.current = cur;
@@ -398,6 +400,7 @@ export default function BattlePage() {
       case 'place': done = cur.placed > prev.placed; break;
       case 'move': done = cur.moveLen > prev.moveLen; break;
       case 'target': done = cur.targetCount > prev.targetCount; break;
+      case 'heal': done = cur.healCount > prev.healCount; break;
       case 'confirm': done = cur.acted > prev.acted; break;
       case 'phase': done = cur.phase !== prev.phase; break;
       default: break;

@@ -44,12 +44,12 @@ export default function PieceInfoPanel({ piece, onClose, onIssue, ap, compact = 
       : '原地攻击';
 
   return (
-    <div className={`rune-border rounded-lg ${compact ? 'p-2' : 'p-3'}`}>
+    <div className={`rune-border rounded-lg ${compact ? 'p-1.5' : 'p-3'}`}>
       {/* 头部 */}
-      <div className={`flex items-start justify-between gap-2 ${compact ? 'mb-1.5' : 'mb-2.5'}`}>
+      <div className={`flex items-start justify-between gap-2 ${compact ? 'mb-1' : 'mb-2.5'}`}>
         <div className="flex items-center gap-2 min-w-0">
           <div
-            className={`${compact ? 'w-7 h-7' : 'w-8 h-8'} shrink-0 flex items-center justify-center rounded-md border ${
+            className={`${compact ? 'w-6 h-6' : 'w-8 h-8'} shrink-0 flex items-center justify-center rounded-md border ${
               isPlayer ? 'bg-accent-500/15 border-accent-500/40 text-accent-300' : 'bg-secondary-500/15 border-secondary-500/40 text-secondary-300'
             }`}
           >
@@ -77,7 +77,7 @@ export default function PieceInfoPanel({ piece, onClose, onIssue, ap, compact = 
 
       {/* 血量 + 属性 */}
       {compact ? (
-        <div className="mb-1.5">
+        <div className="mb-1">
           <div className="grid grid-cols-4 gap-1">
             <Stat compact icon="ri-sword-line" label="攻击" value={String(piece.atk + piece.bonusAtk + piece.tempAtk)} />
             <Stat compact icon="ri-run-line" label="移动" value={String(piece.move + piece.bonusMove)} />
@@ -133,7 +133,7 @@ export default function PieceInfoPanel({ piece, onClose, onIssue, ap, compact = 
 
       {/* 状态 */}
       {(piece.mode !== 'attack' || buffs.length > 0) && (
-        <div className={`${compact ? 'mb-1.5' : 'mb-2.5'}`}>
+        <div className={`${compact ? 'mb-1' : 'mb-2.5'}`}>
           {piece.mode === 'defend' && (
             <div className="flex flex-wrap gap-1 mb-1.5">
               <Tag text="防御中 · 本回合受伤害 -1" />
@@ -157,7 +157,7 @@ export default function PieceInfoPanel({ piece, onClose, onIssue, ap, compact = 
 
       {/* 指令操作 */}
       {showCommand && (
-        <div className={`border-t border-background-300/60 ${compact ? 'pt-1.5' : 'pt-2.5'}`}>
+        <div className={`border-t border-background-300/60 ${compact ? 'pt-1' : 'pt-2.5'}`}>
           {piece.acted ? (
             <div className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 border ${isPlayer ? 'bg-accent-500/10 border-accent-500/40' : 'bg-secondary-500/10 border-secondary-500/40'}`}>
               <i className={`ri-checkbox-circle-fill w-4 h-4 flex items-center justify-center ${isPlayer ? 'text-accent-300' : 'text-secondary-300'}`}></i>
@@ -166,7 +166,7 @@ export default function PieceInfoPanel({ piece, onClose, onIssue, ap, compact = 
           ) : (
             <>
               {/* 行动模式 */}
-              <div className={`flex items-center justify-between ${compact ? 'mb-1.5' : 'mb-2'}`}>
+              <div className={`flex items-center justify-between ${compact ? 'mb-1' : 'mb-2'}`}>
                 <span className="font-label text-[10px] text-foreground-600">指令</span>
                 <div className="inline-flex items-center gap-1 px-1 py-1 rounded-full bg-background-200/70 border border-background-300/50">
                   {(['attack', 'defend'] as Mode[]).map((m) => (
@@ -184,7 +184,7 @@ export default function PieceInfoPanel({ piece, onClose, onIssue, ap, compact = 
               </div>
 
               {/* 路径状态 / 行动点消耗 */}
-              <div className={`flex items-center gap-2 ${compact ? 'flex-nowrap mb-1.5' : 'flex-wrap gap-y-0.5 mb-2'}`}>
+              <div className={`flex items-center gap-2 ${compact ? 'flex-nowrap mb-1' : 'flex-wrap gap-y-0.5 mb-2'}`}>
                 <span className={`flex items-center gap-1.5 ${compact ? 'flex-1 min-w-0' : ''}`}>
                   <i className={`${piece.mode === 'defend' ? 'ri-shield-line' : 'ri-route-line'} text-foreground-600 w-3.5 h-3.5 flex items-center justify-center shrink-0`}></i>
                   <span className={`text-[11px] ${compact ? 'truncate' : ''} ${hasPath ? 'text-accent-300 font-heading' : 'text-foreground-600'}`}>
@@ -225,7 +225,7 @@ export default function PieceInfoPanel({ piece, onClose, onIssue, ap, compact = 
                 <button
                   onClick={() => onIssue!(piece.id, { undoStep: true })}
                   disabled={!hasPath}
-                  className={`flex-1 flex items-center justify-center gap-1 rounded-md text-xs border border-background-300 text-foreground-700 hover:border-primary-400 hover:text-primary-300 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap ${compact ? 'px-2 py-1.5' : 'px-2 py-2'}`}
+                  className={`flex-1 flex items-center justify-center gap-1 rounded-md text-xs border border-background-300 text-foreground-700 hover:border-primary-400 hover:text-primary-300 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap ${compact ? 'px-2 py-1' : 'px-2 py-2'}`}
                 >
                   <i className="ri-arrow-go-back-line w-3.5 h-3.5 flex items-center justify-center"></i>
                   后退一步
@@ -233,7 +233,7 @@ export default function PieceInfoPanel({ piece, onClose, onIssue, ap, compact = 
                 <button
                   onClick={() => onIssue!(piece.id, { clearPath: true })}
                   disabled={!hasPath}
-                  className={`flex-1 flex items-center justify-center gap-1 rounded-md text-xs border border-background-300 text-foreground-700 hover:border-secondary-400 hover:text-secondary-300 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap ${compact ? 'px-2 py-1.5' : 'px-2 py-2'}`}
+                  className={`flex-1 flex items-center justify-center gap-1 rounded-md text-xs border border-background-300 text-foreground-700 hover:border-secondary-400 hover:text-secondary-300 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap ${compact ? 'px-2 py-1' : 'px-2 py-2'}`}
                 >
                   <i className="ri-eraser-line w-3.5 h-3.5 flex items-center justify-center"></i>
                   清空
@@ -242,7 +242,7 @@ export default function PieceInfoPanel({ piece, onClose, onIssue, ap, compact = 
                   onClick={() => onIssue!(piece.id, { confirm: true })}
                   disabled={!canAfford}
                   data-tutorial="confirm"
-                  className={`flex-[1.4] flex items-center justify-center gap-1 rounded-md text-xs bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap ${compact ? 'px-2 py-1.5' : 'px-2 py-2'}`}
+                  className={`flex-[1.4] flex items-center justify-center gap-1 rounded-md text-xs bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap ${compact ? 'px-2 py-1' : 'px-2 py-2'}`}
                 >
                   <i className="ri-check-line w-3.5 h-3.5 flex items-center justify-center"></i>
                   {hasPath ? '确认移动' : '确认指令'}

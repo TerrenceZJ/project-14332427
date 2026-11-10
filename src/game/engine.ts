@@ -303,20 +303,22 @@ function drawCard(s: GameState, team: Team) {
   }
 }
 
-/** 直接伤害结算(无视防御,尊重无敌/格挡/减伤) */
-function dealDirectDamage(s: GameState, p: Piece, amount: number, events?: TurnEvent[]) {
+/** 直接伤害结算(无视防御,尊重无敌/格挡/减伤);ignoreGuard 为真时无视一切防护(用于卡牌代价伤害) */
+function dealDirectDamage(s: GameState, p: Piece, amount: number, events?: TurnEvent[], ignoreGuard = false) {
   if (!p.alive) return;
-  if (p.shieldTurns > 0) {
-    if (events) events.push({ type: 'shield', x: p.x, y: p.y, text: '无敌' });
-    return;
-  }
-  if (p.blockHits > 0) {
-    p.blockHits -= 1;
-    if (events) events.push({ type: 'shield', x: p.x, y: p.y, text: '格挡' });
-    return;
+  if (!ignoreGuard) {
+    if (p.shieldTurns > 0) {
+      if (events) events.push({ type: 'shield', x: p.x, y: p.y, text: '无敌' });
+      return;
+    }
+    if (p.blockHits > 0) {
+      p.blockHits -= 1;
+      if (events) events.push({ type: 'shield', x: p.x, y: p.y, text: '格挡' });
+      return;
+    }
   }
   let amt = amount;
-  if (p.dmgReduction > 0) {
+  if (!ignoreGuard && p.dmgReduction > 0) {
     amt = Math.max(0, amt - p.dmgReduction);
     p.dmgReduction = 0;
   }
@@ -360,11 +362,11 @@ function shufflePositions(s: GameState, pieces: Piece[]) {
 function applyCardEffect(s: GameState, cardId: string, caster: Team, targets: { pieceIds: string[]; cell?: Pt }) {
   const byId = (id: string) => s.pieces.find((p) => p.id === id);
 
-  /** 结算一次法术伤害并记录日志(按实际扣血计数) */
-  const hit = (t: Piece | undefined, amount: number, label: string) => {
+  /** 结算一次法术伤害并记录日志(按实际扣血计数);ignoreGuard 为真时无视无敌/格挡/减伤 */
+  const hit = (t: Piece | undefined, amount: number, label: string, ignoreGuard = false) => {
     if (!t) return;
     const before = t.hp;
-    dealDirectDamage(s, t, amount);
+    dealDirectDamage(s, t, amount, undefined, ignoreGuard);
     const took = before - t.hp;
     if (took > 0) {
       pushLog(s, [
@@ -385,7 +387,8 @@ function applyCardEffect(s: GameState, cardId: string, caster: Team, targets: { 
     }
     case 'c_arrow': {
       hit(byId(targets.pieceIds[0]), 3, '灵箭贯穿伤害');
-      hit(byId(targets.pieceIds[1]), 1, '灵箭溅射伤害');
+      // 己方代价伤害:作为使用卡牌的代价,无视无敌/格挡/减伤,固定扣除 1 点
+      hit(byId(targets.pieceIds[1]), 1, '灵箭溅射伤害', true);
       break;
     }
     case 'c_knock2': {
