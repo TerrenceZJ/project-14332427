@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { GameState, AutoCommandStyle } from '@/game/types';
 import type { PlaySpeed } from '@/pages/play/hooks/useBattle';
-import { MAX_TURNS, START_AP } from '@/game/constants';
+import { MAX_TURNS, START_AP, AUTO_COMMAND_ENABLED } from '@/game/constants';
 import CountdownRingFrame from './CountdownRingFrame';
 
 interface Props {
@@ -160,22 +160,24 @@ export default function TurnHeader({ state, busy, speed, paused, onTimeout, onEn
         {/* 指令阶段工具:自动指令风格 / 查看敌方牌组 / AI 自动下达指令 */}
         {state.phase === 'command' && (
           <div className="mt-2 flex flex-col gap-2">
-            <div className="flex items-center gap-0.5 p-0.5 rounded-full bg-background-200/70 border border-background-300/50">
-              {AUTO_STYLES.map((o) => (
-                <button
-                  key={o.id}
-                  onClick={() => onAutoStyle?.(o.id)}
-                  disabled={busy}
-                  title={o.tip}
-                  className={`flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded-full font-label text-[11px] whitespace-nowrap transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
-                    autoStyle === o.id ? 'bg-primary-500 text-background-50' : 'text-foreground-600 hover:text-foreground-900'
-                  }`}
-                >
-                  <i className={`${o.icon} w-3.5 h-3.5 flex items-center justify-center`}></i>
-                  {o.label}
-                </button>
-              ))}
-            </div>
+            {AUTO_COMMAND_ENABLED && (
+              <div className="flex items-center gap-0.5 p-0.5 rounded-full bg-background-200/70 border border-background-300/50">
+                {AUTO_STYLES.map((o) => (
+                  <button
+                    key={o.id}
+                    onClick={() => onAutoStyle?.(o.id)}
+                    disabled={busy}
+                    title={o.tip}
+                    className={`flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded-full font-label text-[11px] whitespace-nowrap transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
+                      autoStyle === o.id ? 'bg-primary-500 text-background-50' : 'text-foreground-600 hover:text-foreground-900'
+                    }`}
+                  >
+                    <i className={`${o.icon} w-3.5 h-3.5 flex items-center justify-center`}></i>
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <button
                 onClick={onViewEnemyDeck}
@@ -186,6 +188,7 @@ export default function TurnHeader({ state, busy, speed, paused, onTimeout, onEn
                 <i className="ri-eye-line w-4 h-4 flex items-center justify-center"></i>
                 敌方牌组
               </button>
+              {AUTO_COMMAND_ENABLED && (
               <button
                 onClick={onAutoCommand}
                 disabled={busy}
@@ -195,6 +198,7 @@ export default function TurnHeader({ state, busy, speed, paused, onTimeout, onEn
                 <i className="ri-magic-line w-4 h-4 flex items-center justify-center"></i>
                 自动指令
               </button>
+              )}
             </div>
           </div>
         )}

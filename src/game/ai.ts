@@ -1,5 +1,5 @@
 import type { GameState, Piece, Pt } from './types';
-import { dist, inBounds, key, midOf } from './constants';
+import { dist, inBounds, key, midOf, canAttack } from './constants';
 import { enemyVisibleKeys } from './vision';
 
 /** AI 部署:右半场分散布置,并随机指定一只为灵主 */
@@ -68,8 +68,8 @@ export function aiCommand(state: GameState): GameState {
     }
     if (!best) continue;
 
-    const d = dist(e.x, e.y, best.x, best.y);
-    if (d > e.range) {
+    const inRange = canAttack(e.type, e.range, best.x - e.x, best.y - e.y);
+    if (!inRange) {
       if (ap < 1) continue; // 无行动点,无法移动
       ap -= 1;
       const budget = e.move + e.bonusMove;
@@ -125,7 +125,7 @@ export function planPath(e: Piece, target: Pt, s: GameState, budget: number): Pt
   for (const [k, steps] of distMap) {
     if (k === startK) continue;
     const [x, y] = k.split(',').map(Number);
-    if (dist(x, y, target.x, target.y) <= e.range && steps < bestSteps) {
+    if (canAttack(e.type, e.range, target.x - x, target.y - y) && steps < bestSteps) {
       bestSteps = steps;
       bestPt = { x, y };
     }

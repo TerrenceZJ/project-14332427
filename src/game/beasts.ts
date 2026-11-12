@@ -24,7 +24,7 @@ export const BEASTS: Record<PieceType, BeastDef> = {
     icon: 'ri-shield-fill', role: '坦克 · 护卫', skill: '铁壁护卫',
   },
   archer: {
-    type: 'archer', name: '弓箭', en: 'Archer', hp: 4, atk: 1, range: 2, move: 4, heal: 0,
+    type: 'archer', name: '弓箭', en: 'Archer', hp: 4, atk: 1, range: 3, move: 4, heal: 0,
     icon: 'ri-crosshair-line', role: '远程 · 点杀', skill: '远程狙杀',
   },
   mage: {

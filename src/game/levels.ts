@@ -295,8 +295,8 @@ export const TUTORIAL_LEVELS: TutorialLevel[] = [
       enemyLord: 'c_flame',
       skipCards: true,
       prePlaced: [
-        { cardId: 'c_double', x: 0, y: 0 },
-        { cardId: 'c_flame', x: 0, y: 1 },
+        { cardId: 'c_double', x: 2, y: 0 },
+        { cardId: 'c_flame', x: 2, y: 1 },
       ],
     },
     steps: [
@@ -312,7 +312,7 @@ export const TUTORIAL_LEVELS: TutorialLevel[] = [
         phase: 'deploy',
         target: 'board',
         title: '前排已就位',
-        body: '盾卫和战士已经部署在左侧，负责前排顶伤害与近战输出。',
+        body: '盾卫和战士已经部署在前排，负责顶伤害与近战输出。',
         wait: { type: 'none' },
       },
       {
@@ -320,7 +320,7 @@ export const TUTORIAL_LEVELS: TutorialLevel[] = [
         phase: 'deploy',
         target: 'piece-rail',
         title: '新棋子 · 弓箭手',
-        body: '弓箭手是远程输出：射程 2 格、移动 4 格，可以隔着前排远程点杀敌人。',
+        body: '弓箭手是远程点杀单位：沿上下左右直线可达 3 格、移动 4 格，能隔着前排远程狙杀敌人，是队伍里的输出核心。',
         wait: { type: 'none' },
       },
       {
@@ -335,8 +335,8 @@ export const TUTORIAL_LEVELS: TutorialLevel[] = [
         id: 'place-archer',
         phase: 'deploy',
         target: 'board',
-        title: '放置弓箭手',
-        body: '点击左侧高亮格子，把弓箭手放到盾卫和战士的旁边。',
+        title: '放置弓箭手 · 站后排',
+        body: '弓箭手身板脆、近身有盲区，要放在盾卫和战士的身后，躲在安全距离输出。',
         wait: { type: 'place' },
       },
       {
@@ -351,8 +351,16 @@ export const TUTORIAL_LEVELS: TutorialLevel[] = [
         id: 'archer-range',
         phase: 'command',
         target: 'board',
-        title: '远程点杀',
-        body: '弓箭手射程 2 格，可以隔着前排远程攻击敌人，记得手动锁定目标。',
+        title: '远程点杀 · 3 格射程',
+        body: '弓箭手沿上下左右直线可打 3 格，能隔着前排远程点杀敌人。选中弓箭手即可看到高亮的攻击范围，记得手动锁定目标。',
+        wait: { type: 'none' },
+      },
+      {
+        id: 'archer-blind',
+        phase: 'command',
+        target: 'board',
+        title: '近身盲区 · 斜向打不到',
+        body: '注意：弓箭手斜向打不到，紧邻 1 格也是盲区。要让盾卫、战士顶在前排，与敌人保持距离，弓箭手才能安全输出。',
         wait: { type: 'none' },
       },
     ],

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useBattle } from '@/pages/play/hooks/useBattle';
 import { visibleKeys, legalMoves, at, createGame, createLevelGame } from '@/game/engine';
-import { key, inBounds, cellName } from '@/game/constants';
+import { key, inBounds, cellName, canAttack, dist } from '@/game/constants';
 import { CARDS_BY_ID } from '@/game/cards';
 import { BEASTS } from '@/game/beasts';
 import { TUTORIAL_LEVELS } from '@/game/levels';
@@ -49,10 +49,21 @@ export default function BattlePage() {
   const [confirmPlay, setConfirmPlay] = useState<Pending | null>(null);
   const [autoStyle, setAutoStyle] = useState<AutoCommandStyle>('aggressive');
   const [endCommandConfirm, setEndCommandConfirm] = useState(false);
+  const [actionHint, setActionHint] = useState<string | null>(null);
   const card1SeenRef = useRef(false);
   const noticeTimer = useRef<number | null>(null);
   const drawRevealTimer = useRef<number | null>(null);
+  const actionHintTimer = useRef<number | null>(null);
   const prevPhaseRef = useRef(state.phase);
+
+  const showActionHint = (msg: string) => {
+    setActionHint(msg);
+    if (actionHintTimer.current) window.clearTimeout(actionHintTimer.current);
+    actionHintTimer.current = window.setTimeout(() => {
+      setActionHint(null);
+      actionHintTimer.current = null;
+    }, 1800);
+  };
 
   useEffect(() => {
     if (state.phase !== 'card1') setPending(null);
@@ -67,6 +78,7 @@ export default function BattlePage() {
   useEffect(() => () => {
     if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
     if (drawRevealTimer.current) window.clearTimeout(drawRevealTimer.current);
+    if (actionHintTimer.current) window.clearTimeout(actionHintTimer.current);
   }, []);
 
   useEffect(() => {
@@ -123,13 +135,17 @@ export default function BattlePage() {
   const rangeCells = useMemo(() => {
     const set = new Set<string>();
     if (!selected || !selected.placed) return set;
+    // 攻击范围以「移动后的最终落点」为基准计算,避免路径规划后范围仍停留在原地
+    const ax = selected.path.length ? selected.path[selected.path.length - 1].x : selected.x;
+    const ay = selected.path.length ? selected.path[selected.path.length - 1].y : selected.y;
     if (state.phase === 'command' && selected.team === 'player') {
       const r = selected.range;
       for (let dy = -r; dy <= r; dy++) {
         for (let dx = -r; dx <= r; dx++) {
           if (dx === 0 && dy === 0) continue;
-          const nx = selected.x + dx;
-          const ny = selected.y + dy;
+          if (!canAttack(selected.type, selected.range, dx, dy)) continue;
+          const nx = ax + dx;
+          const ny = ay + dy;
           if (inBounds(nx, ny, state.cols, state.rows)) set.add(key(nx, ny));
         }
       }
@@ -140,8 +156,9 @@ export default function BattlePage() {
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
         if (dx === 0 && dy === 0) continue;
-        const nx = selected.x + dx;
-        const ny = selected.y + dy;
+        if (!canAttack(selected.type, selected.range, dx, dy)) continue;
+        const nx = ax + dx;
+        const ny = ay + dy;
         if (inBounds(nx, ny, state.cols, state.rows)) set.add(key(nx, ny));
       }
     }
@@ -256,6 +273,12 @@ export default function BattlePage() {
           return;
         }
         if (occupant && occupant.team === 'enemy' && visible.has(key(x, y)) && sel.atk > 0) {
+          const ax = sel.path.length ? sel.path[sel.path.length - 1].x : sel.x;
+          const ay = sel.path.length ? sel.path[sel.path.length - 1].y : sel.y;
+          if (!canAttack(sel.type, sel.range, occupant.x - ax, occupant.y - ay)) {
+            showActionHint('目标超出攻击范围，无法锁定');
+            return;
+          }
           b.issue(sel.id, { setAttackTarget: occupant.id });
           return;
         }
@@ -318,7 +341,15 @@ export default function BattlePage() {
   const confirmHealChoice = () => {
     if (!healChoice) return;
     const sel = state.pieces.find((p) => p.id === state.selectedId);
-    if (sel) b.issue(sel.id, { setHealTarget: healChoice.pieceId });
+    if (!sel) { setHealChoice(null); return; }
+    const target = state.pieces.find((p) => p.id === healChoice.pieceId);
+    const ax = sel.path.length ? sel.path[sel.path.length - 1].x : sel.x;
+    const ay = sel.path.length ? sel.path[sel.path.length - 1].y : sel.y;
+    if (target && dist(ax, ay, target.x, target.y) > sel.range) {
+      showActionHint('距离过远，无法治疗该棋子');
+      return;
+    }
+    b.issue(sel.id, { setHealTarget: healChoice.pieceId });
     setHealChoice(null);
   };
 
@@ -440,6 +471,19 @@ export default function BattlePage() {
       <ResultOverlay state={state} onRestart={b.restart} onLobby={() => navigate('/')} />
       <PhaseTransitionOverlay phase={state.phase} turn={state.turn} />
       <EnemySkillToast log={state.log} />
+
+      {actionHint &&
+        createPortal(
+          <div className="fixed top-14 left-1/2 -translate-x-1/2 z-[95] pointer-events-none">
+            <div className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-background-950/85 border border-primary-500/60 shadow-lg">
+              <span className="w-6 h-6 shrink-0 flex items-center justify-center rounded-full bg-primary-500/20 text-primary-300">
+                <i className="ri-error-warning-line w-4 h-4 flex items-center justify-center"></i>
+              </span>
+              <span className="font-label text-[12px] text-foreground-50 whitespace-nowrap">{actionHint}</span>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {drawReveal &&
         createPortal(

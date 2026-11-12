@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import type { AutoCommandStyle, Mode, Piece } from '@/game/types';
 import type { Battle } from '@/pages/play/hooks/useBattle';
 import { BEASTS } from '@/game/beasts';
+import { AUTO_COMMAND_ENABLED } from '@/game/constants';
 import BattleBoard, { type BattleBoardHandle } from './BattleBoard';
 import BattleStatusBar from './BattleStatusBar';
 import CountdownRingFrame from './CountdownRingFrame';
@@ -379,6 +380,7 @@ export default function MobileBattleView({
           ) : (
           <>
           {/* 自动指令视图 */}
+          {AUTO_COMMAND_ENABLED && (
           <div data-tutorial="auto-command" className="flex flex-col gap-2">
             <div>
               <div className="font-label text-[9px] text-foreground-600 mb-1">自动指令风格</div>
@@ -406,6 +408,7 @@ export default function MobileBattleView({
               一键自动指令
             </button>
           </div>
+          )}
           <button
             onClick={() => b.confirmAll()}
             disabled={b.busy || !hasDraftCommands}

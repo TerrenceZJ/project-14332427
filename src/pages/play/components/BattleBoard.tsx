@@ -259,20 +259,21 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
     ? state.pieces
         .filter((p) => p.team === 'player' && p.alive && p.placed && !p.acted)
         .flatMap((p) => {
+          // 连线起点以「移动后的最终落点」为基准,与攻击/治疗范围一致
+          const dest = p.path.length ? p.path[p.path.length - 1] : { x: p.x, y: p.y };
           const list: { from: Piece; to: Piece; kind: 'attack' | 'heal'; auto?: boolean }[] = [];
           if (p.attackTarget) {
             const t = state.pieces.find(
               (o) => o.id === p.attackTarget && o.alive && o.placed && o.team !== p.team && visible.has(key(o.x, o.y)),
             );
-            if (t) list.push({ from: p, to: t, kind: 'attack' });
+            if (t) list.push({ from: { ...p, x: dest.x, y: dest.y }, to: t, kind: 'attack' });
           }
           if (p.heal > 0 && p.atk <= 0) {
             if (p.healTarget) {
               const t = state.pieces.find((o) => o.id === p.healTarget && o.alive && o.placed && o.team === p.team);
-              if (t) list.push({ from: p, to: t, kind: 'heal' });
+              if (t) list.push({ from: { ...p, x: dest.x, y: dest.y }, to: t, kind: 'heal' });
             } else {
               // 自动治疗:从移动后的最终位置计算受伤最重的队友
-              const dest = p.path.length ? p.path[p.path.length - 1] : { x: p.x, y: p.y };
               const t = state.pieces
                 .filter(
                   (o) =>
@@ -280,7 +281,7 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
                     o.hp < o.maxHp && dist(dest.x, dest.y, o.x, o.y) <= p.range,
                 )
                 .sort((a, b) => a.hp - b.hp)[0];
-              if (t) list.push({ from: p, to: t, kind: 'heal', auto: true });
+              if (t) list.push({ from: { ...p, x: dest.x, y: dest.y }, to: t, kind: 'heal', auto: true });
             }
           }
           return list;

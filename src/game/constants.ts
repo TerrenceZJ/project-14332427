@@ -1,3 +1,5 @@
+import type { PieceType } from './types';
+
 /** 默认棋盘尺寸(教程关卡可自定义为更小/更大的棋盘) */
 export const COLS = 10;
 export const ROWS = 8;
@@ -15,6 +17,9 @@ export const MAX_HAND = 7;
 /** 出战阵容:从卡组中挑选的卡牌数量,每张卡召唤一只对应种族的灵兽 */
 export const LINEUP_SIZE = 5;
 
+/** 是否启用「一键自动指令」功能(暂时隐藏,置为 true 恢复) */
+export const AUTO_COMMAND_ENABLED = false;
+
 export const key = (x: number, y: number) => `${x},${y}`;
 
 export const inBounds = (x: number, y: number, cols: number, rows: number) =>
@@ -27,6 +32,28 @@ export const dist = (ax: number, ay: number, bx: number, by: number) =>
 /** 曼哈顿距离(四方向,用于移动步数) */
 export const manhattan = (ax: number, ay: number, bx: number, by: number) =>
   Math.abs(ax - bx) + Math.abs(ay - by);
+
+/** 攻击范围判定:按职业区分攻击形状;默认(盾卫/牧师等)为切比雪夫范围 */
+export const canAttack = (type: PieceType, range: number, dx: number, dy: number): boolean => {
+  const ax = Math.abs(dx);
+  const ay = Math.abs(dy);
+  switch (type) {
+    case 'guardian':
+      // 盾卫:仅上下左右相邻一格,斜向打不到
+      return ax + ay === 1;
+    case 'mage':
+      // 法师:上下左右可达 range 格,斜向仅 1 格
+      if (ax === 0 || ay === 0) return ax + ay <= range;
+      return ax === 1 && ay === 1;
+    case 'archer':
+      // 弓箭手:上下左右可达 range 格,但紧邻一格打不到
+      if (ax === 0 || ay === 0) return ax + ay >= 2 && ax + ay <= range;
+      return false;
+    default:
+      // 战士(周围1格)/牧师等:切比雪夫范围
+      return Math.max(ax, ay) <= range;
+  }
+};
 
 export interface Pt {
   x: number;

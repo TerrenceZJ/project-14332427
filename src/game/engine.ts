@@ -1,6 +1,6 @@
 import type { GameState, Piece, PieceType, Team, Mode, TurnEvent, TurnFrame, Pt, LogSegment, AutoCommandStyle } from './types';
 import { BEASTS } from './beasts';
-import { COLS, ROWS, DEPLOY_GAP, START_AP, MAX_TURNS, HAND_SIZE, MAX_HAND, LINEUP_SIZE, key, inBounds, dist, manhattan, cellName, midOf } from './constants';
+import { COLS, ROWS, DEPLOY_GAP, START_AP, MAX_TURNS, HAND_SIZE, MAX_HAND, LINEUP_SIZE, key, inBounds, dist, manhattan, cellName, midOf, canAttack } from './constants';
 import { CARDS, CARDS_BY_ID } from './cards';
 import { visibleKeys, enemyVisibleKeys } from './vision';
 import { aiDeploy, aiCommand, planPath } from './ai';
@@ -889,7 +889,7 @@ export function autoCommand(state: GameState, style: AutoCommandStyle = 'aggress
     }
 
     if (style === 'defensive') {
-      const inRange = best ? dist(a.x, a.y, best.x, best.y) <= a.range : false;
+      const inRange = best ? canAttack(a.type, a.range, best.x - a.x, best.y - a.y) : false;
       const canReach = best ? dist(a.x, a.y, best.x, best.y) <= moveBudget + a.range : false;
       if (inRange) {
         a.path = [];
@@ -910,9 +910,10 @@ export function autoCommand(state: GameState, style: AutoCommandStyle = 'aggress
     // aggressive / focusLord:主动压上
     if (best) {
       const d = dist(a.x, a.y, best.x, best.y);
+      const inRange = canAttack(a.type, a.range, best.x - a.x, best.y - a.y);
       // 目标处于无敌护盾时不再原地空打:未贴身则向前逼近/包抄,为下一回合破盾击杀铺路
       const approachShielded = best.shieldTurns > 0 && d > 1;
-      a.path = d > a.range || approachShielded ? planPath(a, best, s, moveBudget) : [];
+      a.path = !inRange || approachShielded ? planPath(a, best, s, moveBudget) : [];
       a.attackTarget = best.id;
     } else if (style === 'focusLord') {
       a.path = planPath(a, { x: s.cols - 1, y: Math.floor(s.rows / 2) }, s, moveBudget);
@@ -1190,7 +1191,7 @@ export function executeTurn(input: GameState): TurnFrame[] {
     const effAtk = p.atk + p.bonusAtk + p.tempAtk;
     let t: Piece | undefined;
     if (p.attackTarget) {
-      t = s.pieces.find((o) => o.id === p.attackTarget && o.alive && o.placed && o.team !== p.team && dist(p.x, p.y, o.x, o.y) <= p.range);
+      t = s.pieces.find((o) => o.id === p.attackTarget && o.alive && o.placed && o.team !== p.team && canAttack(p.type, p.range, o.x - p.x, o.y - p.y));
     }
     if (!t) continue;
     // 无敌护盾:完全免疫(仍播放攻击动画,让玩家看到"出手但被无敌挡下")
