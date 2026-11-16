@@ -27,6 +27,8 @@ interface Props {
   targetable?: boolean;
   targeted?: boolean;
   faded?: boolean;
+  /** 预览模式:目的地半透明棋子(指令阶段移动目标提示) */
+  preview?: boolean;
   /** 精简模式(小地图):只显示棋子圆点图标,省略血条与状态标记 */
   minimal?: boolean;
   /** 棋盘列数 / 行数 */
@@ -34,7 +36,7 @@ interface Props {
   rows: number;
 }
 
-export default function PieceToken({ piece, revealLord, selected, targetable, targeted, faded, minimal, cols, rows }: Props) {
+export default function PieceToken({ piece, revealLord, selected, targetable, targeted, faded, preview, minimal, cols, rows }: Props) {
   const def = BEASTS[piece.type];
   const isPlayer = piece.team === 'player';
 
@@ -52,13 +54,14 @@ export default function PieceToken({ piece, revealLord, selected, targetable, ta
   useEffect(() => {
     const p = prev.current;
     prev.current = { x: piece.x, y: piece.y };
+    if (preview) return;
     if (!p || (p.x === piece.x && p.y === piece.y)) return;
     setMoving(true);
     setLanding(false);
     const t1 = window.setTimeout(() => { setMoving(false); setLanding(true); }, 620);
     const t2 = window.setTimeout(() => { setLanding(false); }, 1200);
     return () => { window.clearTimeout(t1); window.clearTimeout(t2); };
-  }, [piece.x, piece.y]);
+  }, [piece.x, piece.y, preview]);
 
   // 卡牌 / 战斗效果:根据棋子状态变化(封锁 / 受伤 / 治疗 / 增益)触发对应特效
   const [fx, setFx] = useState<PieceFx | null>(null);
@@ -187,8 +190,9 @@ export default function PieceToken({ piece, revealLord, selected, targetable, ta
           width: `${cellW}%`,
           height: `${cellH}%`,
           transform: 'translate(-50%, -50%)',
-          transition: 'left .62s ease, top .62s ease, opacity .3s ease',
-          opacity: faded ? 0.35 : 1,
+          transition: 'left .62s ease, top .62s ease, opacity .3s ease, filter .3s ease',
+          opacity: faded ? 0.45 : preview ? 0.55 : 1,
+          filter: faded ? 'grayscale(1) brightness(0.5)' : undefined,
           zIndex: 30,
         }}
       >
@@ -300,6 +304,23 @@ export default function PieceToken({ piece, revealLord, selected, targetable, ta
             </div>
           )}
         </div>
+
+        {/* 原地残影:灰化 + 横线刮痕,与目的地的彩色半透明预览形成区分 */}
+        {faded && (
+          <div
+            className="absolute rounded-full pointer-events-none"
+            style={{
+              left: '50%',
+              top: '50%',
+              width: '72%',
+              height: '72%',
+              transform: 'translate(-50%, -50%)',
+              background:
+                'repeating-linear-gradient(to bottom, transparent 0, transparent 3px, rgba(0,0,0,0.4) 3px, rgba(0,0,0,0.4) 4px)',
+              zIndex: 31,
+            }}
+          ></div>
+        )}
       </div>
     </>
   );

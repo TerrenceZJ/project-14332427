@@ -1,6 +1,6 @@
 import { Fragment, forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { GameState, Piece, TurnEvent } from '@/game/types';
-import { key, dist, midOf } from '@/game/constants';
+import { key, midOf } from '@/game/constants';
 import PieceToken from './PieceToken';
 import PieceHpBar from './PieceHpBar';
 import DeployTrail from './DeployTrail';
@@ -21,7 +21,10 @@ interface Props {
   visible: Set<string>;
   selectedId: string | null;
   moveCells: Set<string>;
-  rangeCells: Set<string>;
+  /** 移动范围外两圈的红色不可移动格子 */
+  blockedCells: Set<string>;
+  /** 选中敌方棋子时的射程格子(红色) */
+  enemyRangeCells: Set<string>;
   targetPieceIds: Set<string>;
   selectedTargetIds: Set<string>;
   events: TurnEvent[];
@@ -34,7 +37,7 @@ interface Props {
 }
 
 const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
-  { state, visible, selectedId, moveCells, rangeCells, targetPieceIds, selectedTargetIds, events, onCellClick, onZoomChange, bottomOverlay = 0, previewCell = null }: Props,
+  { state, visible, selectedId, moveCells, blockedCells, enemyRangeCells, targetPieceIds, selectedTargetIds, events, onCellClick, onZoomChange, bottomOverlay = 0, previewCell = null }: Props,
   ref,
 ) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -254,34 +257,33 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
     ? state.pieces.filter((p) => p.team === 'player' && p.alive && p.placed && p.path.length > 0)
     : [];
 
+  // 需要显示移动轨迹(流线箭头)的棋子:草稿 + 被重新选中的已确认棋子
+  const trajectoryMoves = (state.phase === 'command')
+    ? state.pieces.filter((p) => p.team === 'player' && p.alive && p.placed && p.path.length > 0 && (!p.acted || p.id === selectedId))
+    : [];
+
   // 指令阶段:已锁定的攻击/治疗目标(用于棋盘上绘制连线与目标标记)
-  const commandTargets: { from: Piece; to: Piece; kind: 'attack' | 'heal'; auto?: boolean }[] = state.phase === 'command'
+  const commandTargets: { from: Piece; to: Piece; kind: 'attack' | 'heal' }[] = state.phase === 'command'
     ? state.pieces
-        .filter((p) => p.team === 'player' && p.alive && p.placed && !p.acted)
+        .filter((p) => p.team === 'player' && p.alive && p.placed && !p.acted && p.id === selectedId && p.stunned <= 0)
         .flatMap((p) => {
           // 连线起点以「移动后的最终落点」为基准,与攻击/治疗范围一致
           const dest = p.path.length ? p.path[p.path.length - 1] : { x: p.x, y: p.y };
-          const list: { from: Piece; to: Piece; kind: 'attack' | 'heal'; auto?: boolean }[] = [];
+          // 目标的有效位置:若目标也已规划移动,则取其移动后落点
+          const eff = (o: Piece): { x: number; y: number } => (o.path.length ? o.path[o.path.length - 1] : { x: o.x, y: o.y });
+          const list: { from: Piece; to: Piece; kind: 'attack' | 'heal' }[] = [];
           if (p.attackTarget) {
             const t = state.pieces.find(
               (o) => o.id === p.attackTarget && o.alive && o.placed && o.team !== p.team && visible.has(key(o.x, o.y)),
             );
+            // 敌方棋子移动不展示预览,攻击连线指向其原位置,避免与实际显示位置产生偏差
             if (t) list.push({ from: { ...p, x: dest.x, y: dest.y }, to: t, kind: 'attack' });
           }
-          if (p.heal > 0 && p.atk <= 0) {
-            if (p.healTarget) {
-              const t = state.pieces.find((o) => o.id === p.healTarget && o.alive && o.placed && o.team === p.team);
-              if (t) list.push({ from: { ...p, x: dest.x, y: dest.y }, to: t, kind: 'heal' });
-            } else {
-              // 自动治疗:从移动后的最终位置计算受伤最重的队友
-              const t = state.pieces
-                .filter(
-                  (o) =>
-                    o.alive && o.placed && o.team === 'player' && o !== p &&
-                    o.hp < o.maxHp && dist(dest.x, dest.y, o.x, o.y) <= p.range,
-                )
-                .sort((a, b) => a.hp - b.hp)[0];
-              if (t) list.push({ from: { ...p, x: dest.x, y: dest.y }, to: t, kind: 'heal', auto: true });
+          if (p.heal > 0 && p.atk <= 0 && p.healTarget) {
+            const t = state.pieces.find((o) => o.id === p.healTarget && o.alive && o.placed && o.team === p.team);
+            if (t) {
+              const td = eff(t);
+              list.push({ from: { ...p, x: dest.x, y: dest.y }, to: { ...t, x: td.x, y: td.y }, kind: 'heal' });
             }
           }
           return list;
@@ -292,7 +294,6 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
     const isPlayerSide = x < mid;
     const fog = !isPlayerSide && !visible.has(key(x, y));
     const isMove = moveCells.has(key(x, y));
-    const isRange = !isMove && rangeCells.has(key(x, y));
     const checker = (x + y) % 2 === 0;
     if (fog) return 'bg-background-400/75';
     if (isPlayerSide) {
@@ -300,6 +301,9 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
     }
     return checker ? 'bg-emerald-700/[0.17]' : 'bg-emerald-700/[0.26]';
   };
+
+  // 山体边框厚度:至少覆盖底层面板高度,拖动地图时不会露出黑色背景
+  const mountainMargin = Math.max(bottomOverlay + 120, 220);
 
   return (
     <div className="relative w-full h-full overflow-hidden select-none">
@@ -328,6 +332,21 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
             top: `${offset.y + (isWide ? (vp.h - boardH) / 2 : 0)}px`,
           }}
         >
+          {/* 山体边框:环绕地图外围(中间镂空露出草丛),随地图一起拖动 */}
+          <div
+            className="absolute board-mountain"
+            style={{
+              left: -mountainMargin,
+              top: -mountainMargin,
+              right: -mountainMargin,
+              bottom: -mountainMargin,
+              padding: mountainMargin,
+              WebkitMask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+              WebkitMaskComposite: 'xor',
+              maskComposite: 'exclude',
+            }}
+          ></div>
+
           {/* 网格层 */}
           <div
             className="absolute inset-0 grid board-grass"
@@ -338,19 +357,48 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
               const y = Math.floor(i / cols);
               const k = key(x, y);
               const isMove = moveCells.has(k);
-              const isRange = !isMove && rangeCells.has(k);
+              const isBlocked = !isMove && blockedCells.has(k);
+              const isEnemyRange = !isMove && !isBlocked && enemyRangeCells.has(k);
               return (
                 <div
                   key={i}
                   className={`border border-background-400/40 relative ${cellStyle(x, y)}`}
                 >
-                  {isMove && <div className="absolute inset-0 bg-primary-400/40"></div>}
                   {isMove && (
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <div className="w-1.5 h-1.5 rounded-full bg-primary-300"></div>
+                    <svg
+                      className="absolute pointer-events-none"
+                      style={{ left: '6%', top: '6%', width: '88%', height: '88%', zIndex: 12, filter: 'drop-shadow(0 0 2px oklch(var(--accent-400) / 0.55))' }}
+                      viewBox="0 0 100 100"
+                      preserveAspectRatio="none"
+                    >
+                      <polygon points="18,0 82,0 100,18 100,82 82,100 18,100 0,82 0,18" fill="oklch(var(--accent-500) / 0.28)" stroke="oklch(var(--accent-300))" strokeWidth="3" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                  {isMove && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: 13 }}>
+                      <div className="w-1.5 h-1.5 rounded-full bg-accent-200"></div>
                     </div>
                   )}
-                  {isRange && <div className="absolute inset-0 bg-secondary-400/25"></div>}
+                  {isBlocked && (
+                    <svg
+                      className="absolute pointer-events-none"
+                      style={{ left: '6%', top: '6%', width: '88%', height: '88%', zIndex: 12, filter: 'drop-shadow(0 0 2px oklch(var(--secondary-400) / 0.5))' }}
+                      viewBox="0 0 100 100"
+                      preserveAspectRatio="none"
+                    >
+                      <polygon points="18,0 82,0 100,18 100,82 82,100 18,100 0,82 0,18" fill="oklch(var(--secondary-500) / 0.28)" stroke="oklch(var(--secondary-300))" strokeWidth="3" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                  {isEnemyRange && (
+                    <svg
+                      className="absolute pointer-events-none"
+                      style={{ left: '6%', top: '6%', width: '88%', height: '88%', zIndex: 11, filter: 'drop-shadow(0 0 2px oklch(var(--secondary-400) / 0.6))' }}
+                      viewBox="0 0 100 100"
+                      preserveAspectRatio="none"
+                    >
+                      <polygon points="18,0 82,0 100,18 100,82 82,100 18,100 0,82 0,18" fill="oklch(var(--secondary-500) / 0.4)" stroke="oklch(var(--secondary-300))" strokeWidth="3" strokeLinejoin="round" />
+                    </svg>
+                  )}
                 </div>
               );
             })}
@@ -427,8 +475,8 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
             ></div>
           )}
 
-          {/* 移动目标 */}
-          {pendingMoves.map((p) => {
+          {/* 移动目标(目的地虚线框) */}
+          {trajectoryMoves.map((p) => {
             const dest = p.path[p.path.length - 1];
             return (
               <div
@@ -445,61 +493,50 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
             );
           })}
 
-          {/* 移动轨迹 */}
-          {pendingMoves.map((p) => {
-            const pts = [{ x: p.x, y: p.y }, ...p.path];
-            return (
-              <Fragment key={`line-${p.id}`}>
-                {pts.slice(0, -1).map((a, i) => {
-                  const b = pts[i + 1];
-                  const ax = a.x + 0.5;
-                  const ay = a.y + 0.5;
-                  const bx = b.x + 0.5;
-                  const by = b.y + 0.5;
-                  const dx = bx - ax;
-                  const dy = by - ay;
-                  const len = Math.sqrt(dx * dx + dy * dy);
-                  const angle = Math.atan2(dy, dx);
-                  return (
-                    <div
-                      key={`seg-${i}`}
-                      className="absolute pointer-events-none border-t-2 border-dashed border-primary-400/70"
-                      style={{
-                        left: `${(((ax + bx) / 2) / cols) * 100}%`,
-                        top: `${(((ay + by) / 2) / rows) * 100}%`,
-                        width: `${(len / cols) * 100}%`,
-                        transform: `translate(-50%, -50%) rotate(${angle}rad)`,
-                        zIndex: 8,
-                      }}
-                    ></div>
-                  );
-                })}
-              </Fragment>
-            );
-          })}
-
-          {/* 步数序号 */}
-          {pendingMoves.map((p) => (
-            <Fragment key={`steps-${p.id}`}>
-              {p.path.map((c, i) => (
-                <div
-                  key={`step-${p.id}-${i}`}
-                  className="absolute pointer-events-none flex items-center justify-center"
-                  style={{
-                    left: `${(c.x / cols) * 100}%`,
-                    top: `${(c.y / rows) * 100}%`,
-                    width: `${CELL_PCT_X}%`,
-                    height: `${CELL_PCT_Y}%`,
-                    zIndex: 9,
-                  }}
-                >
-                  <span className="w-4 h-4 flex items-center justify-center rounded-full bg-primary-500 text-background-50 text-[9px] font-label">
-                    {i + 1}
-                  </span>
-                </div>
-              ))}
-            </Fragment>
-          ))}
+          {/* 移动轨迹:流线带箭头(草稿 + 被选中的已确认棋子) */}
+          {trajectoryMoves.length > 0 && (
+            <svg
+              className="absolute inset-0 pointer-events-none"
+              width="100%"
+              height="100%"
+              viewBox={`0 0 ${boardW} ${boardH}`}
+              style={{ zIndex: 8 }}
+            >
+              <defs>
+                <marker id="move-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse" orient="auto">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="oklch(var(--primary-400))" />
+                </marker>
+              </defs>
+              {trajectoryMoves.map((p) => {
+                const pts = [{ x: p.x, y: p.y }, ...p.path];
+                return (
+                  <g key={`traj-${p.id}`}>
+                    {pts.slice(0, -1).map((a, i) => {
+                      const b = pts[i + 1];
+                      const ax = ((a.x + 0.5) / cols) * boardW;
+                      const ay = ((a.y + 0.5) / rows) * boardH;
+                      const bx = ((b.x + 0.5) / cols) * boardW;
+                      const by = ((b.y + 0.5) / rows) * boardH;
+                      return (
+                        <line
+                          key={`seg-${i}`}
+                          x1={ax}
+                          y1={ay}
+                          x2={bx}
+                          y2={by}
+                          stroke="oklch(var(--primary-400))"
+                          strokeWidth={3}
+                          strokeLinecap="round"
+                          markerEnd="url(#move-arrow)"
+                          className="move-flow-line"
+                        />
+                      );
+                    })}
+                  </g>
+                );
+              })}
+            </svg>
+          )}
 
           {/* 棋子 */}
           {shownPieces.map((p) => (
@@ -510,23 +547,51 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
               selected={p.id === selectedId}
               targetable={targetPieceIds.has(p.id)}
               targeted={selectedTargetIds.has(p.id)}
-              faded={(state.phase === 'command') && p.team === 'player' && p.path.length > 0}
+              faded={(state.phase === 'command') && p.team === 'player' && (p.path.length > 0 || p.acted)}
               cols={cols}
               rows={rows}
             />
           ))}
 
-          {/* 血条层:独立于棋子,始终位于最上方 */}
-          {shownPieces.map((p) => (
+          {/* 指令阶段:移动目的地的半透明预览棋子(接下来要达到的目标) */}
+          {pendingMoves.map((p) => {
+            const dest = p.path[p.path.length - 1];
+            const ghost = { ...p, x: dest.x, y: dest.y };
+            return (
+              <PieceToken
+                key={`dest-piece-${p.id}`}
+                piece={ghost}
+                revealLord={!state.lordBattle ? ghost.lordRevealed : ghost.team === 'player' || ghost.lordRevealed}
+                selected={false}
+                targetable={false}
+                targeted={false}
+                preview
+                cols={cols}
+                rows={rows}
+              />
+            );
+          })}
+
+          {/* 血条层:独立于棋子,始终位于最上方;仅指令阶段移动过的棋子原位置(残影)不显示血条,血条随预览到目的地 */}
+          {shownPieces.filter((p) => !(state.phase === 'command' && p.team === 'player' && p.path.length > 0)).map((p) => (
             <PieceHpBar key={`hp-${p.id}`} piece={p} cols={cols} rows={rows} />
           ))}
+
+          {/* 移动目的地预览棋子的血条 */}
+          {pendingMoves.map((p) => {
+            const dest = p.path[p.path.length - 1];
+            const ghost = { ...p, x: dest.x, y: dest.y };
+            return (
+              <div key={`hp-dest-${p.id}`} style={{ opacity: 0.6 }}>
+                <PieceHpBar piece={ghost} cols={cols} rows={rows} />
+              </div>
+            );
+          })}
 
           {/* 指令阶段:已锁定的攻击 / 治疗目标(连线 + 目标标记) */}
           {commandTargets.map((ct, i) => {
             const isHeal = ct.kind === 'heal';
-            const isAuto = !!ct.auto;
             const color = isHeal ? 'oklch(var(--accent-300))' : 'oklch(var(--secondary-400))';
-            const lineColor = isAuto ? 'oklch(var(--accent-300) / 0.7)' : color;
             const ax = ct.from.x + 0.5;
             const ay = ct.from.y + 0.5;
             const bx = ct.to.x + 0.5;
@@ -543,7 +608,7 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
                     left: `${(((ax + bx) / 2) / cols) * 100}%`,
                     top: `${(((ay + by) / 2) / rows) * 100}%`,
                     width: `${(len / cols) * 100}%`,
-                    borderTop: `2px ${isAuto ? 'dotted' : isHeal ? 'dashed' : 'solid'} ${lineColor}`,
+                    borderTop: `2px ${isHeal ? 'dashed' : 'solid'} ${color}`,
                     transform: `translate(-50%, -50%) rotate(${angle}rad)`,
                     zIndex: 24,
                   }}
@@ -560,7 +625,7 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
                 >
                   <div
                     className="absolute inset-[-5%] rounded-full border-2 target-lock"
-                    style={{ borderColor: lineColor, boxShadow: `0 0 12px ${lineColor}` }}
+                    style={{ borderColor: color, boxShadow: `0 0 12px ${color}` }}
                   ></div>
                   <span
                     className={`absolute top-0 right-0 w-4 h-4 flex items-center justify-center rounded-full ${
@@ -666,6 +731,25 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
             }
             if (ev.type === 'death') {
               return <DeathBurst key={`death-${i}`} x={ev.x} y={ev.y} cols={cols} rows={rows} />;
+            }
+            if (ev.type === 'fail') {
+              return (
+                <div
+                  key={`fail-${i}`}
+                  className="absolute pointer-events-none fail-float"
+                  style={{
+                    left: `${((ev.x + 0.5) / cols) * 100}%`,
+                    top: `${((ev.y + 0.5) / rows) * 100}%`,
+                    transform: 'translate(-50%, -150%)',
+                    zIndex: 41,
+                  }}
+                >
+                  <div className="flex flex-col items-center gap-1">
+                    <i className="ri-emotion-sad-line text-foreground-300 text-2xl w-6 h-6 flex items-center justify-center" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.55)' }}></i>
+                    <span className="font-label text-[11px] px-2 py-0.5 rounded-full bg-background-950/80 text-foreground-300 whitespace-nowrap">气馁</span>
+                  </div>
+                </div>
+              );
             }
             if (ev.text) {
               return (

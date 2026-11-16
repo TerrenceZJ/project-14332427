@@ -44,7 +44,7 @@ export function useBattle(createInitial: () => GameState = () => createGame()) {
     setState((s) => startBattle(s));
   }, []);
 
-  const issue = useCallback((id: string, patch: { waypoint?: { x: number; y: number }; clearPath?: boolean; confirm?: boolean; mode?: Mode; undoStep?: boolean; setAttackTarget?: string; setHealTarget?: string }) => {
+  const issue = useCallback((id: string, patch: { waypoint?: { x: number; y: number }; clearPath?: boolean; confirm?: boolean; mode?: Mode; attackOrder?: 'first' | 'after'; undoStep?: boolean; setAttackTarget?: string; setHealTarget?: string }) => {
     setState((s) => cmd(s, id, patch));
   }, []);
 

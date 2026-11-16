@@ -37,7 +37,7 @@ export default function HandPanel({
   onCancel,
   orientation = 'vertical',
 }: Props) {
-  const canPlay = state.phase === 'card1';
+  const canPlay = state.phase === 'command';
   const horizontal = orientation === 'horizontal';
   const pendingCard = pendingCardId ? CARDS_BY_ID[pendingCardId] : null;
   const pendingActive = !!pendingCard && canPlay;
@@ -79,7 +79,7 @@ export default function HandPanel({
 
   // 新抽到的卡牌:横排模式把它滚进可视区,竖排模式滚到底部
   useEffect(() => {
-    if (state.phase !== 'card1' || !state.lastDrawnCardId) return;
+    if (state.phase !== 'command' || !state.lastDrawnCardId) return;
     const el = listRef.current;
     if (!el) return;
     if (horizontal) {
@@ -209,7 +209,7 @@ export default function HandPanel({
               const t = tone(c.category);
               const usable = canPlay && state.ap >= c.cost;
               const isPending = pendingCardId === c.id;
-              const isNew = state.phase === 'card1' && state.lastDrawnCardId === c.id;
+              const isNew = state.phase === 'command' && state.lastDrawnCardId === c.id;
               return (
                 <button
                   key={id}
@@ -289,7 +289,7 @@ export default function HandPanel({
               const t = tone(c.category);
               const usable = canPlay && state.ap >= c.cost;
               const isPending = pendingCardId === c.id;
-              const isNew = state.phase === 'card1' && state.lastDrawnCardId === c.id;
+              const isNew = state.phase === 'command' && state.lastDrawnCardId === c.id;
               return (
                 <button
                   key={id}

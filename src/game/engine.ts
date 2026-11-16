@@ -1,6 +1,6 @@
-import type { GameState, Piece, PieceType, Team, Mode, TurnEvent, TurnFrame, Pt, LogSegment, AutoCommandStyle } from './types';
+import type { GameState, Piece, PieceType, Team, Mode, AttackOrder, TurnEvent, TurnFrame, Pt, LogSegment, AutoCommandStyle } from './types';
 import { BEASTS } from './beasts';
-import { COLS, ROWS, DEPLOY_GAP, START_AP, MAX_TURNS, HAND_SIZE, MAX_HAND, LINEUP_SIZE, key, inBounds, dist, manhattan, cellName, midOf, canAttack } from './constants';
+import { COLS, ROWS, DEPLOY_GAP, START_AP, MAX_TURNS, HAND_SIZE, MAX_HAND, LINEUP_SIZE, key, inBounds, dist, cellName, midOf, canAttack } from './constants';
 import { CARDS, CARDS_BY_ID } from './cards';
 import { visibleKeys, enemyVisibleKeys } from './vision';
 import { aiDeploy, aiCommand, planPath } from './ai';
@@ -18,7 +18,7 @@ const makePiece = (type: PieceType, team: Team, fromCard?: string): Piece => {
     type, team, fromCard, x: -1, y: -1, placed: false,
     hp: d.hp, maxHp: d.hp, atk: d.atk, range: d.range, move: d.move, heal: d.heal,
     isLord: false, lordRevealed: false, shieldTurns: 0, revived: false, alive: true,
-    mode: 'attack', facing: team === 'player' ? 'right' : 'left', path: [], attackTarget: undefined, healTarget: undefined, acted: false, revealed: team === 'player',
+    mode: 'attack', attackOrder: 'after', facing: team === 'player' ? 'right' : 'left', path: [], attackTarget: undefined, healTarget: undefined, acted: false, revealed: team === 'player',
     stunned: 0, blockHits: 0, dmgReduction: 0, bonusMove: 0, bonusAtk: 0, tempAtk: 0, dotImmunity: 0,
   };
 };
@@ -88,7 +88,7 @@ function markRevealed(s: GameState) {
 
 export function createGame(cols: number = COLS, rows: number = ROWS, deployGap: number = DEPLOY_GAP, lineupSize: number = LINEUP_SIZE): GameState {
   return {
-    phase: 'deploy', turn: 0, cols, rows, deployGap, lineupSize, skipCards: false, lordBattle: true, pieces: [], vision: [], ap: START_AP, enemyAp: START_AP,
+    phase: 'deploy', turn: 0, cols, rows, deployGap, lineupSize, skipCards: false, lordBattle: true, pieces: [], vision: [], ap: START_AP, enemyAp: START_AP, playerApPenalty: 0, enemyApPenalty: 0,
     deck: shuffle(CARDS.map((c) => c.id)),
     hand: [],
     lastDrawnCardId: null,
@@ -467,10 +467,10 @@ function applyCardEffect(s: GameState, cardId: string, caster: Team, targets: { 
       break;
     }
     case 'c_apdown': {
-      if (caster === 'player') s.enemyAp = Math.max(0, s.enemyAp - 1); else s.ap = Math.max(0, s.ap - 1);
+      if (caster === 'player') s.enemyApPenalty += 1; else s.playerApPenalty += 1;
       pushLog(s, [
         { text: caster === 'player' ? '敌方' : '你', team: caster === 'player' ? 'enemy' : 'player' },
-        { text: ' 的行动点 -1。' },
+        { text: ' 下回合的行动点 -1。' },
       ], caster, 'info');
       break;
     }
@@ -736,7 +736,7 @@ export function startBattle(state: GameState): GameState {
     return aiCommand(s);
   }
 
-  s.phase = 'card1';
+  s.phase = 'command';
   for (let i = 0; i < HAND_SIZE; i++) {
     drawCard(s, 'player');
     drawCard(s, 'enemy');
@@ -744,37 +744,102 @@ export function startBattle(state: GameState): GameState {
   // 开局发牌不触发抽卡动画,清空新抽牌标记
   s.lastDrawnCardId = null;
 
-  pushLog(s, '—— 回合 1 · 抽卡阶段 ——', 'player', 'turn');
-  return aiPlayCards(s);
+  pushLog(s, '—— 回合 1 · 执行阶段 · 出牌并下达指令 ——', 'player', 'turn');
+  return aiCommand(aiPlayCards(s));
 }
 
 export function selectPiece(state: GameState, id: string | null): GameState {
   return { ...state, selectedId: id };
 }
 
-/** 尝试把一个新的转角格加入棋子路径,返回新的完整路径;非法则返回 null */
-function extendPath(p: Piece, waypoint: Pt, cols: number, rows: number): Pt[] | null {
-  const anchor = p.path.length ? p.path[p.path.length - 1] : { x: p.x, y: p.y };
-  if (waypoint.x === anchor.x && waypoint.y === anchor.y) return null;
-  if (waypoint.x !== anchor.x && waypoint.y !== anchor.y) return null;
-  if (!inBounds(waypoint.x, waypoint.y, cols, rows)) return null;
-  const segment = manhattan(anchor.x, anchor.y, waypoint.x, waypoint.y);
-  if (p.path.length + segment > p.move + p.bonusMove) return null;
-  const steps: Pt[] = [...p.path];
-  let cx = anchor.x;
-  let cy = anchor.y;
-  while (cx !== waypoint.x || cy !== waypoint.y) {
-    cx += Math.sign(waypoint.x - cx);
-    cy += Math.sign(waypoint.y - cy);
-    steps.push({ x: cx, y: cy });
+/** 计算从棋子当前位置到指定目标格的正交最短路径(BFS 避障);目标不可达或超出移动力则返回 null */
+function pathTo(s: GameState, p: Piece, dest: Pt): Pt[] | null {
+  if (dest.x === p.x && dest.y === p.y) return [];
+  const budget = p.move + p.bonusMove;
+  if (budget <= 0) return null;
+  const others = s.pieces.filter((q) => q.id !== p.id);
+  const dirs: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const startK = key(p.x, p.y);
+  const endK = key(dest.x, dest.y);
+  const distMap = new Map<string, number>([[startK, 0]]);
+  const prev = new Map<string, string>();
+  const queue: Pt[] = [{ x: p.x, y: p.y }];
+  let head = 0;
+  while (head < queue.length) {
+    const cur = queue[head++];
+    const steps = distMap.get(key(cur.x, cur.y))!;
+    if (steps >= budget) continue;
+    for (const [dx, dy] of dirs) {
+      const nx = cur.x + dx;
+      const ny = cur.y + dy;
+      const nk = key(nx, ny);
+      if (!inBounds(nx, ny, s.cols, s.rows) || distMap.has(nk) || isCommandOccupied(others, nx, ny)) continue;
+      distMap.set(nk, steps + 1);
+      prev.set(nk, key(cur.x, cur.y));
+      if (nk === endK) {
+        const path: Pt[] = [];
+        let k = endK;
+        while (k !== startK) {
+          const [cx, cy] = k.split(',').map(Number);
+          path.push({ x: cx, y: cy });
+          k = prev.get(k)!;
+        }
+        path.reverse();
+        return path;
+      }
+      queue.push({ x: nx, y: ny });
+    }
   }
-  return steps;
+  return null;
+}
+
+/** 找到棋子移动力范围内、能攻击到目标的最远落点(优先保持最远攻击距离);不可达返回 null */
+export function findAttackCell(s: GameState, p: Piece, target: Piece): Pt | null {
+  const budget = p.move + p.bonusMove;
+  if (budget <= 0) return null;
+  const others = s.pieces.filter((q) => q.id !== p.id);
+  const dirs: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const startK = key(p.x, p.y);
+  const distMap = new Map<string, number>([[startK, 0]]);
+  const prev = new Map<string, string>();
+  const queue: Pt[] = [{ x: p.x, y: p.y }];
+  let head = 0;
+  while (head < queue.length) {
+    const cur = queue[head++];
+    const steps = distMap.get(key(cur.x, cur.y))!;
+    if (steps >= budget) continue;
+    for (const [dx, dy] of dirs) {
+      const nx = cur.x + dx;
+      const ny = cur.y + dy;
+      const nk = key(nx, ny);
+      if (!inBounds(nx, ny, s.cols, s.rows) || distMap.has(nk) || isCommandOccupied(others, nx, ny)) continue;
+      distMap.set(nk, steps + 1);
+      prev.set(nk, key(cur.x, cur.y));
+      queue.push({ x: nx, y: ny });
+    }
+  }
+  // 在可达格中挑出能攻击目标者,取离目标最远(保持最远攻击距离)、其次移动步数最多者
+  let best: Pt | null = null;
+  let bestD = -1;
+  let bestSteps = -1;
+  for (const [k, steps] of distMap) {
+    if (k === startK) continue;
+    const [x, y] = k.split(',').map(Number);
+    if (!canAttack(p.type, p.range, target.x - x, target.y - y)) continue;
+    const d = dist(x, y, target.x, target.y);
+    if (d > bestD || (d === bestD && steps > bestSteps)) {
+      bestD = d;
+      bestSteps = steps;
+      best = { x, y };
+    }
+  }
+  return best;
 }
 
 export function command(
   state: GameState,
   pieceId: string,
-  patch: { waypoint?: { x: number; y: number }; clearPath?: boolean; confirm?: boolean; mode?: Mode; undoStep?: boolean; setAttackTarget?: string; setHealTarget?: string }
+  patch: { waypoint?: { x: number; y: number }; clearPath?: boolean; confirm?: boolean; mode?: Mode; attackOrder?: AttackOrder; undoStep?: boolean; setAttackTarget?: string; setHealTarget?: string }
 ): GameState {
   if (state.phase !== 'command') return state;
   const s = clone(state);
@@ -792,9 +857,9 @@ export function command(
     return true;
   };
 
-  // 添加转角格:仅规划折角路径(草稿),不消耗行动点
+  // 点击移动范围内的目标格:直接规划完整正交路径(草稿),不消耗行动点
   if (patch.waypoint) {
-    const next = extendPath(p, patch.waypoint, s.cols, s.rows);
+    const next = pathTo(s, p, patch.waypoint);
     if (!next) return state;
     p.path = next;
     return s;
@@ -810,7 +875,13 @@ export function command(
   // 确认指令:此时才计算行动点并结束该棋子的行动
   // 防御同样允许保留移动路径(先移动到指定格再进入防御姿态),因此不再清空路径
   if (patch.confirm) {
-    if (!charge(1)) return state;
+    // 没有任何移动/攻击/治疗操作时直接待机,不消耗行动点
+    const hasAction = p.path.length > 0 || p.attackTarget !== undefined || p.healTarget !== undefined;
+    if (hasAction) {
+      if (!charge(1)) return state;
+    } else {
+      p.acted = true;
+    }
     return s;
   }
 
@@ -820,15 +891,34 @@ export function command(
     return s;
   }
 
-  // 切换行动模式(攻击 / 防御):仅记录状态,不消耗行动点、不结束行动
+  // 切换行动模式(攻击 / 防御 / 待机):仅记录状态,不消耗行动点、不结束行动
   if (patch.mode !== undefined) {
     p.mode = patch.mode;
     return s;
   }
 
-  // 设置攻击目标
+  // 切换攻击时机(先攻击再移动 / 先移动再攻击)
+  if (patch.attackOrder !== undefined) {
+    p.attackOrder = patch.attackOrder;
+    return s;
+  }
+
+  // 设置攻击目标(锁定目标即进入攻击模式);「先移动再攻击」且超出攻击范围时,自动移动到能打到目标的最远落点
   if (patch.setAttackTarget !== undefined) {
+    const target = s.pieces.find((q) => q.id === patch.setAttackTarget && q.alive && q.placed && q.team !== p.team);
+    if (target) {
+      const ax = p.path.length ? p.path[p.path.length - 1].x : p.x;
+      const ay = p.path.length ? p.path[p.path.length - 1].y : p.y;
+      if (p.attackOrder === 'after' && !canAttack(p.type, p.range, target.x - ax, target.y - ay)) {
+        const cell = findAttackCell(s, p, target);
+        if (cell) {
+          const np = pathTo(s, p, cell);
+          if (np) p.path = np;
+        }
+      }
+    }
     p.attackTarget = patch.setAttackTarget || undefined;
+    if (patch.setAttackTarget) p.mode = 'attack';
     return s;
   }
 
@@ -933,7 +1023,7 @@ export function confirmAll(state: GameState): GameState {
   const s = clone(state);
   for (const p of s.pieces) {
     if (p.team !== 'player' || !p.alive || !p.placed || p.acted) continue;
-    const hasDraft = p.path.length > 0 || p.attackTarget !== undefined || p.healTarget !== undefined || p.mode === 'defend';
+    const hasDraft = p.path.length > 0 || p.attackTarget !== undefined || p.healTarget !== undefined || p.mode === 'defend' || p.mode === 'standby';
     if (!hasDraft) continue;
     if (s.ap < 1) continue;
     s.ap -= 1;
@@ -959,24 +1049,29 @@ function isCommandOccupied(pieces: Piece[], x: number, y: number): boolean {
 
 function legalMoves(s: GameState, p: Piece): Set<string> {
   const set = new Set<string>();
-  const remaining = p.move + p.bonusMove - p.path.length;
-  if (remaining <= 0) return set;
-  const anchor = p.path.length ? p.path[p.path.length - 1] : { x: p.x, y: p.y };
+  const budget = p.move + p.bonusMove;
+  if (budget <= 0) return set;
   const others = s.pieces.filter((q) => q.id !== p.id);
-
-  // 沿四个方向直线推进,遇到被占用或出界的格子即停下(不能穿过棋子)
-  const walk = (dx: number, dy: number) => {
-    let nx = anchor.x + dx;
-    let ny = anchor.y + dy;
-    for (let steps = 0; steps < remaining; steps++, nx += dx, ny += dy) {
-      if (!inBounds(nx, ny, s.cols, s.rows) || isCommandOccupied(others, nx, ny)) break;
-      set.add(key(nx, ny));
+  const dirs: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const startK = key(p.x, p.y);
+  const distMap = new Map<string, number>([[startK, 0]]);
+  const queue: Pt[] = [{ x: p.x, y: p.y }];
+  let head = 0;
+  // 正交 BFS:遍历移动力(方格数)内所有可到达格子,避开被占用的格子
+  while (head < queue.length) {
+    const cur = queue[head++];
+    const steps = distMap.get(key(cur.x, cur.y))!;
+    if (steps >= budget) continue;
+    for (const [dx, dy] of dirs) {
+      const nx = cur.x + dx;
+      const ny = cur.y + dy;
+      const nk = key(nx, ny);
+      if (!inBounds(nx, ny, s.cols, s.rows) || distMap.has(nk) || isCommandOccupied(others, nx, ny)) continue;
+      distMap.set(nk, steps + 1);
+      set.add(nk);
+      queue.push({ x: nx, y: ny });
     }
-  };
-  walk(-1, 0);
-  walk(1, 0);
-  walk(0, -1);
-  walk(0, 1);
+  }
 
   return set;
 }
@@ -1051,7 +1146,61 @@ export function executeTurn(input: GameState): TurnFrame[] {
   // 帧 0:执行开始,定格原始站位(含战前宣告信息)
   pushFrame(700);
 
-  // 1) 同时移动(被封锁棋子不动),沿各自路径按格逐步推进
+  // 1) 先攻击再移动的棋子:移动前从原始位置发动攻击(命中即结算,被击杀者不再移动)
+  {
+    const firstDmg = new Map<string, number>();
+    const firstAttacks: { targetId: string; amount: number }[] = [];
+    const firstEvents: TurnEvent[] = [];
+    for (const p of s.pieces) {
+      if (!p.alive || !p.placed || p.stunned > 0) continue;
+      if (p.mode !== 'attack' || p.atk <= 0 || p.attackOrder !== 'first') continue;
+      const effAtk = p.atk + p.bonusAtk + p.tempAtk;
+      const t = p.attackTarget
+        ? s.pieces.find((o) => o.id === p.attackTarget && o.alive && o.placed && o.team !== p.team && canAttack(p.type, p.range, o.x - p.x, o.y - p.y))
+        : undefined;
+      if (!t) continue;
+      if (t.shieldTurns > 0) {
+        firstEvents.push({ type: 'attack', x: t.x, y: t.y, fx: p.x, fy: p.y, amount: effAtk });
+        firstEvents.push({ type: 'shield', x: t.x, y: t.y, text: '无敌' });
+        continue;
+      }
+      if (t.blockHits > 0) {
+        t.blockHits -= 1;
+        firstEvents.push({ type: 'attack', x: t.x, y: t.y, fx: p.x, fy: p.y, amount: effAtk });
+        firstEvents.push({ type: 'shield', x: t.x, y: t.y, text: '格挡' });
+        continue;
+      }
+      let amount = effAtk;
+      if (t.mode === 'defend') amount = Math.max(0, amount - 1);
+      if (t.dmgReduction > 0 && amount > 0) {
+        const absorbed = Math.min(amount, t.dmgReduction);
+        amount -= absorbed;
+        t.dmgReduction = 0;
+      }
+      if (amount <= 0) continue;
+      firstDmg.set(t.id, (firstDmg.get(t.id) || 0) + amount);
+      firstAttacks.push({ targetId: t.id, amount });
+      firstEvents.push({ type: 'attack', x: t.x, y: t.y, fx: p.x, fy: p.y, amount });
+    }
+    if (firstEvents.length > 0) {
+      pushFrame(2000, firstEvents);
+      const firstDamageEvents: TurnEvent[] = [];
+      for (const p of s.pieces) {
+        if (!p.alive) continue;
+        const d = firstDmg.get(p.id);
+        if (d) firstDamageEvents.push({ type: 'attack', x: p.x, y: p.y, amount: d });
+      }
+      if (firstDamageEvents.length > 0) pushFrame(100, firstDamageEvents);
+      const firstDeathEvents: TurnEvent[] = [];
+      for (const atk of firstAttacks) {
+        const p = s.pieces.find((o) => o.id === atk.targetId);
+        if (p) dealDirectDamage(s, p, atk.amount, firstDeathEvents);
+      }
+      if (firstDeathEvents.length > 0) pushFrame(1500, firstDeathEvents);
+    }
+  }
+
+  // 2) 同时移动(被封锁棋子不动),沿各自路径按格逐步推进
   const movers = s.pieces
     .filter((p) => p.alive && p.placed && p.stunned <= 0 && p.acted && p.path.length > 0)
     .map((p) => ({ p, idx: 0, stopped: false }));
@@ -1161,19 +1310,22 @@ export function executeTurn(input: GameState): TurnFrame[] {
   // 移动收尾信息(被堵/抵达)单独成帧,确保与画面同步
   if (movers.length > 0) pushFrame(700);
 
-  // 2) 计算攻击 / 治疗(被封锁棋子跳过)
+  // 3) 先移动再攻击的棋子(攻击时机=后)在移动后发动攻击 + 治疗(被封锁棋子跳过)
   const dmg = new Map<string, number>();
   const heals = new Map<string, number>();
   const attackEvents: TurnEvent[] = [];
   const healEvents: TurnEvent[] = [];
+  const failEvents: TurnEvent[] = [];
   const attacks: { targetId: string; amount: number }[] = [];
   for (const p of s.pieces) {
-    if (!p.alive || !p.placed || p.mode === 'defend' || p.stunned > 0) continue;
+    if (!p.alive || !p.placed || p.mode === 'defend' || p.mode === 'standby' || p.stunned > 0) continue;
     if (p.atk <= 0) {
       if (p.heal > 0) {
         let t: Piece | undefined;
-        if (p.team === 'player' && p.healTarget) {
-          t = s.pieces.find((o) => o.id === p.healTarget && o.alive && o.placed && o.team === p.team && dist(p.x, p.y, o.x, o.y) <= p.range);
+        if (p.team === 'player') {
+          if (p.healTarget) {
+            t = s.pieces.find((o) => o.id === p.healTarget && o.alive && o.placed && o.team === p.team && dist(p.x, p.y, o.x, o.y) <= p.range);
+          }
         } else {
           const cand = s.pieces
             .filter((o) => o.alive && o.placed && o.team === p.team && o !== p
@@ -1188,12 +1340,21 @@ export function executeTurn(input: GameState): TurnFrame[] {
       }
       continue;
     }
+    // 先攻击的棋子已在移动前结算,这里仅处理「先移动再攻击」
+    if (p.attackOrder !== 'after') continue;
     const effAtk = p.atk + p.bonusAtk + p.tempAtk;
     let t: Piece | undefined;
     if (p.attackTarget) {
       t = s.pieces.find((o) => o.id === p.attackTarget && o.alive && o.placed && o.team !== p.team && canAttack(p.type, p.range, o.x - p.x, o.y - p.y));
     }
-    if (!t) continue;
+    if (!t) {
+      // 先移动再攻击却无法命中目标:气馁(攻击失败)
+      if (p.attackTarget) {
+        failEvents.push({ type: 'fail', x: p.x, y: p.y, text: '攻击失败' });
+        pushLog(s, [...pieceRef(p), { text: ' 未能攻击到目标,露出了气馁的神情。' }], p.team, 'info');
+      }
+      continue;
+    }
     // 无敌护盾:完全免疫(仍播放攻击动画,让玩家看到"出手但被无敌挡下")
     if (t.shieldTurns > 0) {
       attackEvents.push({ type: 'attack', x: t.x, y: t.y, fx: p.x, fy: p.y, amount: effAtk });
@@ -1208,18 +1369,15 @@ export function executeTurn(input: GameState): TurnFrame[] {
       continue;
     }
     let amount = effAtk;
-    const notes: string[] = [];
     // 防御姿态:减免 1 点
     if (t.mode === 'defend') {
       amount = Math.max(0, amount - 1);
-      notes.push('防御姿态减免 1 点');
     }
     // 护盾:一次性减伤
     if (t.dmgReduction > 0 && amount > 0) {
       const absorbed = Math.min(amount, t.dmgReduction);
       amount -= absorbed;
       t.dmgReduction = 0;
-      notes.push(`护盾吸收 ${absorbed} 点`);
     }
     // 伤害被完全抵消
     if (amount <= 0) {
@@ -1230,7 +1388,7 @@ export function executeTurn(input: GameState): TurnFrame[] {
     attackEvents.push({ type: 'attack', x: t.x, y: t.y, fx: p.x, fy: p.y, amount });
   }
 
-  // 3) 先结算治疗(保留「先治疗、后受伤」的原有语义)
+  // 4) 先结算治疗(保留「先治疗、后受伤」的原有语义)
   if (healEvents.length > 0) {
     for (const p of s.pieces) {
       if (!p.alive) continue;
@@ -1240,12 +1398,17 @@ export function executeTurn(input: GameState): TurnFrame[] {
     pushFrame(1300, healEvents);
   }
 
-  // 4) 攻击动画帧(2秒)
+  // 5) 攻击动画帧(2秒)
   if (attackEvents.length > 0) {
     pushFrame(2000, attackEvents);
   }
 
-  // 5) 伤害数字帧
+  // 5.5) 气馁(攻击失败)动画帧
+  if (failEvents.length > 0) {
+    pushFrame(1300, failEvents);
+  }
+
+  // 6) 伤害数字帧
   const damageEvents: TurnEvent[] = [];
   for (const p of s.pieces) {
     if (!p.alive) continue;
@@ -1367,6 +1530,11 @@ export function beginNextTurn(state: GameState): GameState {
 
   s.ap = START_AP;
   s.enemyAp = START_AP;
+  // 应用上回合累积的行动点惩罚(干扰之音:下回合 -1 行动点)
+  s.ap = Math.max(0, s.ap - s.playerApPenalty);
+  s.enemyAp = Math.max(0, s.enemyAp - s.enemyApPenalty);
+  s.playerApPenalty = 0;
+  s.enemyApPenalty = 0;
   s.pieces.forEach((p) => {
     if (!p.alive) return;
     p.acted = false; p.path = []; p.mode = 'attack';
@@ -1396,7 +1564,8 @@ export function beginNextTurn(state: GameState): GameState {
   drawCard(s, 'player');
   drawCard(s, 'enemy');
 
-  s.phase = 'card1';
-  pushLog(s, `—— 回合 ${s.turn} · 抽卡阶段 ——`, 'player', 'turn');
-  return aiPlayCards(s);
+  // 抽卡阶段与执行阶段合并:出牌 + 下达指令在同一阶段完成
+  s.phase = 'command';
+  pushLog(s, `—— 回合 ${s.turn} · 执行阶段 · 出牌并下达指令 ——`, 'player', 'turn');
+  return aiCommand(aiPlayCards(s));
 }

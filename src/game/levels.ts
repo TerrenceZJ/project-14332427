@@ -544,24 +544,24 @@ export const TUTORIAL_LEVELS: TutorialLevel[] = [
     steps: [
       {
         id: 'hand',
-        phase: 'card1',
+        phase: 'command',
         target: 'hand',
         title: '手牌',
         body: '每回合抽一张卡牌加入手牌。卡牌分攻击、辅助、特殊三类，使用需消耗行动点。',
       },
       {
         id: 'card-use',
-        phase: 'card1',
+        phase: 'command',
         target: 'hand',
         title: '使用卡牌',
         body: '点击手牌查看详情，再点「使用」发动效果。',
       },
       {
         id: 'end-card',
-        phase: 'card1',
+        phase: 'command',
         target: 'end-card',
-        title: '结束抽卡',
-        body: '用完卡牌后点这里，进入指令阶段。',
+        title: '结束指令',
+        body: '用完卡牌、下达完指令后点这里，进入结算。',
       },
       {
         id: 'finish',

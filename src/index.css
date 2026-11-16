@@ -204,6 +204,40 @@ html, body { background: oklch(var(--background-50)); color: oklch(var(--foregro
 }
 .dmg-float { animation: dmg-float 1.5s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 
+/* 移动轨迹:流线箭头(虚线沿方向流动) */
+@keyframes move-flow {
+  to { stroke-dashoffset: -14; }
+}
+.move-flow-line {
+  stroke-dasharray: 8 6;
+  animation: move-flow 0.55s linear infinite;
+}
+
+/* 待机按钮:高亮闪烁 */
+@keyframes standby-pulse {
+  0%, 100% { background-color: oklch(var(--accent-500)); box-shadow: 0 0 0 0 oklch(var(--accent-400) / 0.7); }
+  50% { background-color: oklch(var(--accent-400)); box-shadow: 0 0 0 6px oklch(var(--accent-400) / 0); }
+}
+.standby-pulse { animation: standby-pulse 1.2s ease-in-out infinite; }
+
+/* 行动点消耗:最右格闪烁后暗掉 */
+@keyframes ap-dim {
+  0% { background-color: oklch(var(--primary-400)); box-shadow: 0 0 6px oklch(var(--primary-400)); }
+  60% { background-color: oklch(var(--primary-300)); box-shadow: 0 0 10px oklch(var(--primary-300)); }
+  100% { background-color: oklch(var(--background-300) / 0.6); box-shadow: none; }
+}
+.ap-dim { animation: ap-dim 0.7s ease-out both; }
+
+/* 攻击失败:气馁表情上浮 */
+@keyframes fail-float {
+  0% { opacity: 0; transform: translate(-50%, -90%) scale(0.6) rotate(-8deg); }
+  30% { opacity: 1; transform: translate(-50%, -130%) scale(1.1) rotate(0deg); }
+  100% { opacity: 1; transform: translate(-50%, -160%) scale(1); }
+}
+.fail-float { animation: fail-float 1.4s ease-out both; }
+
+/* 移动/不可移动范围格:透明填充 + 45度折角高亮边框(描边仅在边框) */
+
 /* 抽卡:稀有度光环 / 迸发 / 闪光 / 火花 */
 @keyframes rarity-rays-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .rarity-rays {
@@ -348,6 +382,16 @@ html, body { background: oklch(var(--background-50)); color: oklch(var(--foregro
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='26'%3E%3Cg stroke='%2315803d' stroke-width='1.7' stroke-linecap='round' opacity='0.4'%3E%3Cpath d='M6 26 L4 15'/%3E%3Cpath d='M9 26 L9 12'/%3E%3Cpath d='M13 26 L14 14'/%3E%3Cpath d='M17 26 L16 13'/%3E%3Cpath d='M21 26 L22 14'/%3E%3Cpath d='M24 26 L23 16'/%3E%3C/g%3E%3C/svg%3E");
   background-size: 26px 26px;
   background-repeat: repeat;
+}
+
+/* 地图外山体纹理(不可移动区域) */
+.board-mountain {
+  background-color: #20252f;
+  background-image:
+    radial-gradient(ellipse 60% 40% at 50% 0%, rgba(255,255,255,0.05), transparent 70%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='40' viewBox='0 0 72 40'%3E%3Cpolygon points='0,40 18,8 36,40' fill='%232e3440'/%3E%3Cpolygon points='30,40 54,4 72,40' fill='%23252b36'/%3E%3Cpolygon points='0,40 18,8 36,40' fill='none' stroke='%234b5563' stroke-width='0.9' opacity='0.55'/%3E%3Cpolygon points='30,40 54,4 72,40' fill='none' stroke='%234b5563' stroke-width='0.9' opacity='0.55'/%3E%3C/svg%3E");
+  background-size: auto, 72px 40px;
+  background-repeat: no-repeat, repeat;
 }
 
 /* 敌方侧薄云层 */

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { AutoCommandStyle, Mode, Piece } from '@/game/types';
+import type { AutoCommandStyle } from '@/game/types';
 import type { Battle } from '@/pages/play/hooks/useBattle';
 import { BEASTS } from '@/game/beasts';
 import { AUTO_COMMAND_ENABLED } from '@/game/constants';
 import BattleBoard, { type BattleBoardHandle } from './BattleBoard';
 import BattleStatusBar from './BattleStatusBar';
+import ApBar from './ApBar';
 import CountdownRingFrame from './CountdownRingFrame';
 import MobilePieceRail from './MobilePieceRail';
 import PieceInfoPanel from './PieceInfoPanel';
@@ -26,7 +27,7 @@ interface TabDef {
 const phaseLabel: Record<string, string> = {
   deploy: '部署阶段',
   card1: '抽卡阶段',
-  command: '指令阶段',
+  command: '执行阶段',
   card2: '援救阶段',
   execute: '同步执行',
   gameover: '战斗结束',
@@ -34,7 +35,7 @@ const phaseLabel: Record<string, string> = {
 
 const confirmLabel: Record<string, string> = {
   card1: '结束抽卡 · 下指令',
-  command: '结束指令 · 战斗',
+  command: '结束 · 结算',
   card2: '结束 · 同步执行',
 };
 
@@ -48,7 +49,9 @@ interface Props {
   b: Battle;
   visible: Set<string>;
   moveCells: Set<string>;
-  rangeCells: Set<string>;
+  blockedCells: Set<string>;
+  enemyRangeCells: Set<string>;
+  selectTick: number;
   targetPieceIds: Set<string>;
   selectedTargetIds: Set<string>;
   pendingCardId: string | null;
@@ -78,7 +81,9 @@ export default function MobileBattleView({
   b,
   visible,
   moveCells,
-  rangeCells,
+  blockedCells,
+  enemyRangeCells,
+  selectTick,
   targetPieceIds,
   selectedTargetIds,
   pendingCardId,
@@ -114,8 +119,8 @@ export default function MobileBattleView({
   const isDeploy = state.phase === 'deploy';
   const isCommand = state.phase === 'command';
   const isExecute = state.phase === 'execute';
-  const canPlay = state.phase === 'card1';
-  const canEnd = canPlay || isCommand;
+  const canPlay = isCommand;
+  const canEnd = isCommand;
 
   // 部署阶段无手牌,自动切到棋子页并展开抽屉
   useEffect(() => {
@@ -125,18 +130,10 @@ export default function MobileBattleView({
     }
   }, [isDeploy, tab]);
 
-  // 进入抽卡 / 援救阶段自动展开手牌
-  useEffect(() => {
-    if (state.phase === 'card1') {
-      setTab('hand');
-      setOpen(true);
-    }
-  }, [state.phase]);
-
-  // 进入指令阶段,自动切到「指令」界面并弹出
+  // 进入执行阶段(出牌 + 指令合并):默认展示手牌
   useEffect(() => {
     if (state.phase === 'command') {
-      setTab('cmd');
+      setTab('hand');
       setOpen(true);
     }
   }, [state.phase]);
@@ -157,7 +154,7 @@ export default function MobileBattleView({
     if (pendingCardId && !prev) {
       setOpen(false);
     } else if (!pendingCardId && prev) {
-      if (state.phase === 'card1') {
+      if (state.phase === 'command') {
         setTab('hand');
         setOpen(true);
       }
@@ -167,7 +164,7 @@ export default function MobileBattleView({
   // 已去除阶段倒计时:所有阶段均不设时间限制
   const countdown = false;
   // 本阶段总时长(用于倒计时进度环的比例)
-  const phaseTotal = isDeploy ? 60 : state.phase === 'card1' ? 120 : 60;
+  const phaseTotal = isDeploy ? 60 : state.phase === 'command' ? 120 : 60;
   const [count, setCount] = useState(60);
   useEffect(() => {
     setCount(phaseTotal);
@@ -218,7 +215,7 @@ export default function MobileBattleView({
   // 是否还有未确认的草稿指令(路径 / 目标 / 防御姿态)
   const hasDraftCommands = state.pieces.some(
     (p) => p.team === 'player' && p.placed && p.alive && !p.acted &&
-      (p.path.length > 0 || p.attackTarget !== undefined || p.healTarget !== undefined || p.mode === 'defend'),
+      (p.path.length > 0 || p.attackTarget !== undefined || p.healTarget !== undefined || p.mode === 'defend' || p.mode === 'standby'),
   );
 
   // 指令阶段 / 抽卡阶段选中的棋子(指令阶段己方可下指令,敌方仅查看情报;抽卡阶段只读查看)
@@ -229,8 +226,8 @@ export default function MobileBattleView({
         ) ?? null
       : null;
 
-  // 抽卡阶段:点击棋子只读查看其情报与 buff(有卡牌待选目标时不显示)
-  const showCard1Piece = canPlay && !!selectedPiece && !pendingCardId;
+  // 抽卡阶段已合并到执行阶段,不再单独只读查看棋子情报
+  const showCard1Piece = false;
 
   // 指令阶段选中棋子后,自动切到「指令」(不自动展开)
   useEffect(() => {
@@ -239,7 +236,7 @@ export default function MobileBattleView({
     }
   }, [isCommand, selectedPiece]);
 
-  // 选中新棋子时展开面板;对同一棋子新增路径(开始规划移动)时收起面板露出棋盘
+  // 选中新棋子时不自动弹出信息框;对同一棋子新增路径(开始规划移动)时收起面板露出棋盘
   const prevSelRef = useRef<{ id: string | null; len: number }>({ id: null, len: 0 });
   useEffect(() => {
     const id = selectedPiece?.id ?? null;
@@ -247,6 +244,16 @@ export default function MobileBattleView({
     const prev = prevSelRef.current;
     if (isCommand) {
       if (prev.id !== id && id) {
+        // 新选中:己方进入指令模式(收起面板),敌方直接展示信息面板
+        const np = selectedPiece;
+        if (np && np.team === 'enemy') {
+          setOpen(true);
+        } else {
+          setOpen(false);
+        }
+      } else if (prev.id !== id && !id) {
+        // 取消选中:回到手牌视图
+        setTab('hand');
         setOpen(true);
       } else if (prev.id === id && len > prev.len) {
         setOpen(false);
@@ -254,6 +261,14 @@ export default function MobileBattleView({
     }
     prevSelRef.current = { id, len };
   }, [isCommand, selectedPiece]);
+
+  // 再次点击已选中的棋子(原位置)时,切换信息框的显示/隐藏
+  const prevSelectTickRef = useRef(selectTick);
+  useEffect(() => {
+    if (selectTick === prevSelectTickRef.current) return;
+    prevSelectTickRef.current = selectTick;
+    if (isCommand && selectedPiece) setOpen((o) => !o);
+  }, [selectTick, isCommand, selectedPiece]);
 
   // 点击选中棋子时,自动将其平移到棋盘视口中心
   // 指令阶段选中棋子会自动展开面板,需等面板高度测量完成后(overlayH)再居中,
@@ -277,7 +292,7 @@ export default function MobileBattleView({
     if (!pid) return;
     const piece = selectedPiece;
     if (!piece || piece.id !== pid) return;
-    if (isCommand && (!open || overlayH === 0)) return;
+    if (isCommand && open && overlayH === 0) return;
     pendingCenterRef.current = null;
     lastCenteredRef.current = piece.id;
     boardRef.current?.centerOn(piece.x, piece.y);
@@ -287,7 +302,9 @@ export default function MobileBattleView({
   const validTab: Tab = tabs.some((t) => t.id === tab) ? tab : tabs[0]?.id ?? 'piece';
 
   // 底部弹出面板(手牌 / 指令 / 日志)遮挡棋盘的高度,用于让棋盘可向上平移
-  const overlayOpen = validTab !== 'piece' && open;
+  // 指令标签在未选中棋子(且未开启自动指令)时没有内容,不显示空面板
+  const cmdHasContent = validTab !== 'cmd' || !!selectedPiece || AUTO_COMMAND_ENABLED;
+  const overlayOpen = validTab !== 'piece' && open && cmdHasContent;
   const isCmdPiece = validTab === 'cmd' && !!selectedPiece;
   // 指令阶段面板收起后显示的精简操作条(模式 / 撤销 / 确认),同样会遮挡棋盘底部
   const actionBarVisible = isCommand && !!selectedPiece && !open && !selectedPiece.acted;
@@ -370,13 +387,7 @@ export default function MobileBattleView({
       return (
         <div className={`flex flex-col gap-2 ${selectedPiece ? '' : 'h-full min-h-0 overflow-y-auto'}`}>
           {selectedPiece ? (
-            <PieceInfoPanel
-              piece={selectedPiece}
-              ap={state.ap}
-              onClose={() => b.select(null)}
-              onIssue={selectedPiece.team === 'player' ? b.issue : undefined}
-              compact
-            />
+            <PieceInfoPanel piece={selectedPiece} onClose={() => b.select(null)} />
           ) : (
           <>
           {/* 自动指令视图 */}
@@ -459,30 +470,32 @@ export default function MobileBattleView({
       className="lg:hidden fixed inset-0 z-20 flex flex-col bg-background-50 text-foreground-900"
       style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
-      {/* 顶栏:返回 + 阶段 + 战况信息 + 倒计时 */}
-      <header className="shrink-0 h-10 px-2 flex items-center gap-1.5 border-b border-background-200/60 bg-background-50/95 backdrop-blur">
-        <button
-          onClick={() => navigate('/')}
-          aria-label="返回大厅"
-          className="w-8 h-8 shrink-0 flex items-center justify-center rounded-md text-foreground-700 hover:text-primary-300 cursor-pointer"
-        >
-          <i className="ri-arrow-left-line text-base w-4 h-4 flex items-center justify-center"></i>
-        </button>
-        <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-hidden">
+      {/* 顶栏:返回 + 阶段 + 战况信息 + 倒计时;底部行动点条 */}
+      <header className="shrink-0 px-2 pt-1 pb-1.5 border-b border-background-200/60 bg-background-50/95 backdrop-blur">
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => navigate('/')}
+            aria-label="返回大厅"
+            className="w-8 h-8 shrink-0 flex items-center justify-center rounded-md text-foreground-700 hover:text-primary-300 cursor-pointer"
+          >
+            <i className="ri-arrow-left-line text-base w-4 h-4 flex items-center justify-center"></i>
+          </button>
           <span className="font-heading text-xs text-foreground-950 whitespace-nowrap shrink-0">{phaseLabel[state.phase]}</span>
+          <div className="flex-1 min-w-0"></div>
           {!intro && (
-            <span data-tutorial="status-bar">
+            <span data-tutorial="status-bar" className="shrink-0">
               <BattleStatusBar state={state} />
             </span>
           )}
+          {countdown ? (
+            <span className={`shrink-0 font-heading text-xs tabular-nums ${count <= 10 ? 'text-secondary-400' : 'text-foreground-900'}`}>
+              {mm}:{ss}
+            </span>
+          ) : (
+            <span className="w-8 shrink-0"></span>
+          )}
         </div>
-        {countdown ? (
-          <span className={`shrink-0 font-heading text-xs tabular-nums ${count <= 10 ? 'text-secondary-400' : 'text-foreground-900'}`}>
-            {mm}:{ss}
-          </span>
-        ) : (
-          <span className="w-8 shrink-0"></span>
-        )}
+        {!intro && <ApBar ap={state.ap} />}
       </header>
 
       {/* 棋盘区域 - 占据所有可用空间 */}
@@ -493,7 +506,8 @@ export default function MobileBattleView({
           visible={visible}
           selectedId={state.selectedId}
           moveCells={moveCells}
-          rangeCells={rangeCells}
+          blockedCells={blockedCells}
+          enemyRangeCells={enemyRangeCells}
           targetPieceIds={targetPieceIds}
           selectedTargetIds={selectedTargetIds}
           events={b.events}
@@ -503,7 +517,7 @@ export default function MobileBattleView({
         />
 
         {/* 弹出窗口覆盖层:手牌 / 指令 / 日志 */}
-        {validTab !== 'piece' && open && !showCard1Piece && (
+        {overlayOpen && !showCard1Piece && (
           <div className={`absolute left-0 right-0 bottom-0 z-40 ${validTab === 'hand' ? 'pointer-events-none' : ''}`}>
             <div
               ref={overlayRef}
@@ -520,12 +534,12 @@ export default function MobileBattleView({
         {showCard1Piece && (
           <div className="absolute left-0 right-0 bottom-0 z-[45] px-2 pt-2 pb-2">
             <div className="rounded-t-xl border-t border-background-200 bg-background-100/95 backdrop-blur px-2 pt-2 pb-2">
-              <PieceInfoPanel piece={selectedPiece} ap={state.ap} onClose={() => b.select(null)} compact />
+              <PieceInfoPanel piece={selectedPiece} onClose={() => b.select(null)} />
             </div>
           </div>
         )}
 
-        {/* 指令阶段:面板收起后,选中棋子显示精简操作条(模式 / 撤销 / 确认),无需反复展开 */}
+        {/* 指令阶段:面板收起后,选中棋子显示精简操作条(撤销 / 待机) */}
         {isCommand && selectedPiece && !open && !selectedPiece.acted && (
           <div ref={actionBarRef} className="absolute left-0 right-0 bottom-0 z-[45] px-2 pb-2">
             <div className="flex items-center gap-1.5 rounded-xl border border-background-300 bg-background-100/95 backdrop-blur px-2 py-1.5 shadow-lg">
@@ -535,19 +549,7 @@ export default function MobileBattleView({
               <span className="shrink-0 font-heading text-xs text-foreground-950 truncate max-w-[64px]">
                 {BEASTS[selectedPiece.type].name}
               </span>
-              <div className="flex-1 min-w-0 flex items-center gap-0.5 p-0.5 rounded-full bg-background-200/70 border border-background-300/50" data-tutorial="mode">
-                {(['attack', 'defend'] as Mode[]).map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => b.issue(selectedPiece.id, { mode: m })}
-                    className={`flex-1 px-1 py-0.5 rounded-full font-label text-[10px] whitespace-nowrap cursor-pointer transition-colors ${
-                      selectedPiece.mode === m ? 'bg-primary-500 text-background-50' : 'text-foreground-600 hover:text-foreground-900'
-                    }`}
-                  >
-                    {m === 'attack' ? '攻击' : '防御'}
-                  </button>
-                ))}
-              </div>
+              <div className="flex-1"></div>
               <button
                 onClick={() => b.issue(selectedPiece.id, { undoStep: true })}
                 disabled={selectedPiece.path.length === 0}
@@ -557,13 +559,16 @@ export default function MobileBattleView({
                 <i className="ri-arrow-go-back-line w-4 h-4 flex items-center justify-center"></i>
               </button>
               <button
-                onClick={() => b.issue(selectedPiece.id, { confirm: true })}
+                onClick={() => {
+                  b.issue(selectedPiece.id, { confirm: true });
+                  b.select(null);
+                }}
                 disabled={state.ap < 1}
                 data-tutorial="confirm"
-                className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+                className="standby-pulse shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-md text-background-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
               >
                 <i className="ri-check-line w-3.5 h-3.5 flex items-center justify-center"></i>
-                确认 · 1点
+                待机
               </button>
             </div>
           </div>
@@ -583,7 +588,7 @@ export default function MobileBattleView({
         <div className="px-2 pb-1 flex items-center gap-1">
           {/* 标签切换 */}
           <div className="flex-1 min-w-0 flex items-center gap-1 p-0.5 rounded-full bg-background-200/70 border border-background-300/50">
-            {tabs.map((t) => (
+            {tabs.filter((t) => t.id !== 'cmd').map((t) => (
               <button
                 key={t.id}
                 onClick={() => pickTab(t.id)}

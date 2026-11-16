@@ -46,7 +46,7 @@ export default function PhaseTransitionOverlay({ phase, turn }: Props) {
 
   if (!show) return null;
 
-  const isTurnStart = phase === 'card1';
+  const isTurnStart = phase === 'command';
   const title = isTurnStart ? turnLabel(turn) : (phaseLabel[phase] ?? '');
   const subtitle = isTurnStart ? phaseLabel[phase] : phase === 'gameover' ? '' : turnLabel(turn);
 

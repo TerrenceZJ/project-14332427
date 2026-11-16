@@ -1,24 +1,45 @@
-import type { GameState } from '@/game/types';
+import type { GameState, Piece } from '@/game/types';
+import { BEASTS } from '@/game/beasts';
 import { MAX_TURNS } from '@/game/constants';
 
 interface Props {
   state: GameState;
 }
 
-/** 顶栏战况信息(纯中文,内联片段):回合 / 行动点 / 双方存活棋子 / 牌库 */
+/** 顶栏战况信息:回合数、己方/敌方棋子以职业图标显示(存活亮起,阵亡变暗并划斜痕),以及牌库 */
 export default function BattleStatusBar({ state }: Props) {
-  const allyAlive = state.pieces.filter((p) => p.team === 'player' && p.alive).length;
-  const allyTotal = state.pieces.filter((p) => p.team === 'player').length;
-  const enemyAlive = state.pieces.filter((p) => p.team === 'enemy' && p.alive).length;
-  const enemyTotal = state.pieces.filter((p) => p.team === 'enemy').length;
+  const ally = state.pieces.filter((p) => p.team === 'player');
+  const enemy = state.pieces.filter((p) => p.team === 'enemy');
 
   return (
     <span className="inline-flex items-center gap-x-1.5 whitespace-nowrap">
       <Stat label="回合" value={`${state.turn}/${MAX_TURNS}`} tone="text-primary-300" />
-      <Stat label="行动点" value={`${state.ap}`} tone="text-primary-400" />
-      <Stat label="己方" value={`${allyAlive}/${allyTotal}`} tone="text-accent-300" />
-      <Stat label="敌方" value={`${enemyAlive}/${enemyTotal}`} tone="text-secondary-300" />
+      <PieceRow pieces={ally} tone="ally" />
+      <span className="text-foreground-400 text-[10px] leading-none">|</span>
+      <PieceRow pieces={enemy} tone="enemy" />
       <Stat label="牌库" value={`${state.deck.length}`} tone="text-foreground-900" />
+    </span>
+  );
+}
+
+function PieceRow({ pieces, tone }: { pieces: Piece[]; tone: 'ally' | 'enemy' }) {
+  const lit = tone === 'ally' ? 'text-accent-300' : 'text-secondary-300';
+  return (
+    <span className="inline-flex items-center gap-0.5">
+      {pieces.map((p) => (
+        <span key={p.id} className="relative w-5 h-5 flex items-center justify-center">
+          <i
+            className={`${BEASTS[p.type].icon} text-[15px] w-5 h-5 flex items-center justify-center ${
+              p.alive ? lit : 'text-foreground-600/40'
+            }`}
+          ></i>
+          {!p.alive && (
+            <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <span className="w-[2px] h-[16px] rounded-full bg-secondary-400/80 rotate-45"></span>
+            </span>
+          )}
+        </span>
+      ))}
     </span>
   );
 }

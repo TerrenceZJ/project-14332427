@@ -7,7 +7,10 @@ export type PieceType =
   | 'mage'
   | 'priest';
 
-export type Mode = 'attack' | 'defend';
+export type Mode = 'attack' | 'defend' | 'standby';
+
+/** 攻击时机:先攻击再移动 / 先移动再攻击(仅攻击模式) */
+export type AttackOrder = 'first' | 'after';
 
 /** 棋子朝向:上 / 下 / 左 / 右 */
 export type Facing = 'up' | 'down' | 'left' | 'right';
@@ -47,6 +50,8 @@ export interface Piece {
   revived: boolean;
   alive: boolean;
   mode: Mode;
+  /** 攻击时机:先攻击再移动 / 先移动再攻击(仅攻击模式生效) */
+  attackOrder: AttackOrder;
   /** 棋子朝向:初始面向对手,移动后朝向最后一次移动的方向 */
   facing: Facing;
   /** 移动路径:指令阶段规划的完整步进序列(每项为下一步落点,按顺序执行) */
@@ -88,7 +93,7 @@ export interface LogEntry {
 }
 
 export interface TurnEvent {
-  type: 'attack' | 'heal' | 'shield' | 'revive' | 'death' | 'card';
+  type: 'attack' | 'heal' | 'shield' | 'revive' | 'death' | 'card' | 'fail';
   x: number;
   y: number;
   amount?: number;
@@ -125,6 +130,9 @@ export interface GameState {
   vision: string[];
   ap: number;
   enemyAp: number;
+  /** 下回合开局时扣除的行动点(玩家 / 敌方),由「干扰之音」等卡牌施加 */
+  playerApPenalty: number;
+  enemyApPenalty: number;
   deck: string[];
   hand: string[];
   /** 玩家本回合新抽到的卡牌 id(用于抽卡阶段的抽卡动画与手牌高亮) */

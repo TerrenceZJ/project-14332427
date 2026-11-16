@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useBattle } from '@/pages/play/hooks/useBattle';
-import { visibleKeys, legalMoves, at, createGame, createLevelGame } from '@/game/engine';
-import { key, inBounds, cellName, canAttack, dist } from '@/game/constants';
+import { visibleKeys, legalMoves, at, createGame, createLevelGame, findAttackCell } from '@/game/engine';
+import { key, inBounds, cellName, dist, canAttack } from '@/game/constants';
 import { CARDS_BY_ID } from '@/game/cards';
 import { BEASTS } from '@/game/beasts';
 import { TUTORIAL_LEVELS } from '@/game/levels';
@@ -46,6 +46,9 @@ export default function BattlePage() {
   const [enemyDeckOpen, setEnemyDeckOpen] = useState(false);
   const [drawReveal, setDrawReveal] = useState<string | null>(null);
   const [healChoice, setHealChoice] = useState<HealChoice | null>(null);
+  const [moveConfirm, setMoveConfirm] = useState<{ pieceId: string; x: number; y: number } | null>(null);
+  const [attackOrderChoice, setAttackOrderChoice] = useState<{ pieceId: string; targetId: string } | null>(null);
+  const [selectTick, setSelectTick] = useState(0);
   const [confirmPlay, setConfirmPlay] = useState<Pending | null>(null);
   const [autoStyle, setAutoStyle] = useState<AutoCommandStyle>('aggressive');
   const [endCommandConfirm, setEndCommandConfirm] = useState(false);
@@ -55,6 +58,7 @@ export default function BattlePage() {
   const drawRevealTimer = useRef<number | null>(null);
   const actionHintTimer = useRef<number | null>(null);
   const prevPhaseRef = useRef(state.phase);
+  const lastMoveClickRef = useRef<{ pieceId: string; x: number; y: number; time: number } | null>(null);
 
   const showActionHint = (msg: string) => {
     setActionHint(msg);
@@ -66,10 +70,12 @@ export default function BattlePage() {
   };
 
   useEffect(() => {
-    if (state.phase !== 'card1') setPending(null);
-    if (state.phase !== 'card1') setDrawReveal(null);
+    if (state.phase !== 'command') setPending(null);
+    if (state.phase !== 'command') setDrawReveal(null);
     setPhaseEndNotice(false);
     setHealChoice(null);
+    setMoveConfirm(null);
+    setAttackOrderChoice(null);
     setConfirmPlay(null);
     if (state.phase !== 'command') setEnemyDeckOpen(false);
     if (noticeTimer.current) { window.clearTimeout(noticeTimer.current); noticeTimer.current = null; }
@@ -94,7 +100,7 @@ export default function BattlePage() {
   }, [state.phase, level]);
 
   useEffect(() => {
-    if (state.phase === 'card1') {
+    if (state.phase === 'command') {
       if (!card1SeenRef.current && state.lastDrawnCardId) {
         card1SeenRef.current = true;
         const id = state.lastDrawnCardId;
@@ -126,39 +132,40 @@ export default function BattlePage() {
       if (selected.team !== 'player' || selected.acted) return new Set<string>();
       return legalMoves(state, selected);
     }
-    if (state.phase === 'card1') {
-      return legalMoves(state, selected);
-    }
     return new Set<string>();
   }, [state, selected]);
 
-  const rangeCells = useMemo(() => {
+  // 红色不可移动范围:移动范围外两圈(提示本回合够不着的格子)
+  const blockedCells = useMemo(() => {
     const set = new Set<string>();
-    if (!selected || !selected.placed) return set;
-    // 攻击范围以「移动后的最终落点」为基准计算,避免路径规划后范围仍停留在原地
-    const ax = selected.path.length ? selected.path[selected.path.length - 1].x : selected.x;
-    const ay = selected.path.length ? selected.path[selected.path.length - 1].y : selected.y;
-    if (state.phase === 'command' && selected.team === 'player') {
-      const r = selected.range;
-      for (let dy = -r; dy <= r; dy++) {
-        for (let dx = -r; dx <= r; dx++) {
-          if (dx === 0 && dy === 0) continue;
-          if (!canAttack(selected.type, selected.range, dx, dy)) continue;
-          const nx = ax + dx;
-          const ny = ay + dy;
-          if (inBounds(nx, ny, state.cols, state.rows)) set.add(key(nx, ny));
-        }
+    if (!selected || !selected.alive || !selected.placed) return set;
+    if (state.phase !== 'command' || selected.team !== 'player' || selected.acted) return set;
+    const budget = selected.move + selected.bonusMove;
+    if (budget <= 0) return set;
+    for (let dy = -budget - 2; dy <= budget + 2; dy++) {
+      for (let dx = -budget - 2; dx <= budget + 2; dx++) {
+        const d = Math.abs(dx) + Math.abs(dy);
+        if (d <= budget || d > budget + 2) continue;
+        const nx = selected.x + dx;
+        const ny = selected.y + dy;
+        if (inBounds(nx, ny, state.cols, state.rows)) set.add(key(nx, ny));
       }
-      return set;
     }
-    if (selected.team !== 'player' && state.phase !== 'card1') return set;
+    return set;
+  }, [selected, state.phase, state.cols, state.rows]);
+
+  // 选中敌方棋子时显示的射程格子(红色)
+  const enemyRangeCells = useMemo(() => {
+    const set = new Set<string>();
+    if (!selected || !selected.alive || !selected.placed) return set;
+    if (state.phase !== 'command' || selected.team !== 'enemy') return set;
     const r = selected.range;
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
         if (dx === 0 && dy === 0) continue;
         if (!canAttack(selected.type, selected.range, dx, dy)) continue;
-        const nx = ax + dx;
-        const ny = ay + dy;
+        const nx = selected.x + dx;
+        const ny = selected.y + dy;
         if (inBounds(nx, ny, state.cols, state.rows)) set.add(key(nx, ny));
       }
     }
@@ -173,7 +180,7 @@ export default function BattlePage() {
   // 可选目标(蓝色边框提示),同时用于判断点击是否有效
   const targetPieceIds = useMemo(() => {
     const set = new Set<string>();
-    if (!pendingCard || (state.phase !== 'card1')) return set;
+    if (!pendingCard || (state.phase !== 'command')) return set;
     const kind = pendingCard.target.kind;
     if (kind === 'cell') return set;
 
@@ -196,7 +203,7 @@ export default function BattlePage() {
     if (!pendingCard) return null;
     switch (pendingCard.target.kind) {
       case 'enemy1': return '选择 1 个敌方目标';
-      case 'enemy2': return '选择 2 个敌方目标';
+      case 'enemy2': return '选择 1-2 个敌方目标';
       case 'ally1': return '选择 1 个己方目标';
       case 'ally2': return '选择 2 个己方目标';
       case 'enemyAlly': return pending!.pieceIds.length === 0 ? '先选择敌方目标' : '再选择己方目标';
@@ -205,8 +212,10 @@ export default function BattlePage() {
     }
   }, [pendingCard, pending]);
 
-  // 发动卡牌所需的最少目标数:以卡牌声明的目标数量为准(如双击破阵 / 异位祈祷需选满 2 个)
-  const pendingMin = pendingCard ? Math.max(1, pendingCard.target.count) : 1;
+  // 发动卡牌所需的最少目标数:敌方 2 目标卡(双击破阵 / 异位祈祷)选 1 个即可发动
+  const pendingMin = pendingCard
+    ? pendingCard.target.kind === 'enemy2' ? 1 : Math.max(1, pendingCard.target.count)
+    : 1;
 
   // 当前选中的卡牌是否已满足发动条件(区域卡需选定中心格,目标卡需选满目标)
   const pendingReady = pending && pendingCard
@@ -227,20 +236,26 @@ export default function BattlePage() {
   };
 
   const handleCell = (x: number, y: number) => {
-    if (pending && pendingCard && (state.phase === 'card1')) {
+    if (pending && pendingCard && (state.phase === 'command')) {
       if (pendingCard.target.kind === 'cell') {
         setPending({ ...pending, cell: { x, y } });
         return;
       }
       const occupant = at(state, x, y);
-      if (occupant) {
-        const already = pending.pieceIds.includes(occupant.id);
+      // 已移动的棋子选中其移动后位置(路径终点);原位置残影不可选
+      const moved = state.pieces.find(
+        (p) => p.team === 'player' && p.alive && p.placed && p.path.length > 0 &&
+          p.path[p.path.length - 1].x === x && p.path[p.path.length - 1].y === y,
+      );
+      const target = moved ?? (occupant && !(occupant.team === 'player' && occupant.path.length > 0) ? occupant : null);
+      if (target) {
+        const already = pending.pieceIds.includes(target.id);
         if (already) {
-          setPending({ ...pending, pieceIds: pending.pieceIds.filter((id) => id !== occupant.id) });
+          setPending({ ...pending, pieceIds: pending.pieceIds.filter((id) => id !== target.id) });
           return;
         }
-        if (targetPieceIds.has(occupant.id)) {
-          const nextTargets = [...pending.pieceIds, occupant.id];
+        if (targetPieceIds.has(target.id)) {
+          const nextTargets = [...pending.pieceIds, target.id];
           if (nextTargets.length > pendingCard.target.count) return;
           setPending({ ...pending, pieceIds: nextTargets });
         }
@@ -262,43 +277,103 @@ export default function BattlePage() {
     if (state.phase === 'command' && !b.busy) {
       const sel = state.pieces.find((p) => p.id === state.selectedId);
       const occupant = at(state, x, y);
+      // 移动后的"新位置棋子":路径终点落在 (x,y) 的己方棋子
+      const movedPiece = state.pieces.find(
+        (p) => p.team === 'player' && p.alive && p.placed && p.path.length > 0 &&
+          p.path[p.path.length - 1].x === x && p.path[p.path.length - 1].y === y,
+      );
 
       if (sel && sel.team === 'player' && sel.alive && sel.placed && !sel.acted) {
-        if (occupant && occupant.team === 'player' && occupant.id !== sel.id && sel.heal > 0) {
-          setHealChoice({ x, y, pieceId: occupant.id });
+        if (sel.heal > 0) {
+          // 治疗:点击其他己方棋子的移动后位置(若已移动)或原位置(若未移动)选择治疗目标
+          if (movedPiece && movedPiece.id !== sel.id) {
+            setHealChoice({ x, y, pieceId: movedPiece.id });
+            return;
+          }
+          if (occupant && occupant.team === 'player' && occupant.id !== sel.id && occupant.path.length === 0) {
+            setHealChoice({ x, y, pieceId: occupant.id });
+            return;
+          }
+        }
+        // 点击移动后的新位置棋子(路径终点):单击展示信息,双击确认移动
+        if (movedPiece && movedPiece.id === sel.id) {
+          const now = Date.now();
+          const last = lastMoveClickRef.current;
+          const isDouble = !!last && last.pieceId === sel.id && last.x === x && last.y === y && now - last.time < 400;
+          if (isDouble) {
+            lastMoveClickRef.current = null;
+            setMoveConfirm({ pieceId: sel.id, x, y });
+          } else {
+            lastMoveClickRef.current = { pieceId: sel.id, x, y, time: now };
+            b.select(sel.id);
+            setSelectTick((t) => t + 1);
+          }
           return;
         }
         if (moveCells.has(key(x, y))) {
-          b.issue(sel.id, { waypoint: { x, y } });
+          const now = Date.now();
+          const last = lastMoveClickRef.current;
+          const isDouble = !!last && last.pieceId === sel.id && last.x === x && last.y === y && now - last.time < 400;
+          if (isDouble) {
+            lastMoveClickRef.current = null;
+            setMoveConfirm({ pieceId: sel.id, x, y });
+          } else {
+            lastMoveClickRef.current = { pieceId: sel.id, x, y, time: now };
+            b.issue(sel.id, { waypoint: { x, y } });
+          }
           return;
         }
         if (occupant && occupant.team === 'enemy' && visible.has(key(x, y)) && sel.atk > 0) {
+          // 判断是否能攻击到该敌人:当前/移动后落点已在攻击范围内,或可移动到能攻击到它的位置
           const ax = sel.path.length ? sel.path[sel.path.length - 1].x : sel.x;
           const ay = sel.path.length ? sel.path[sel.path.length - 1].y : sel.y;
-          if (!canAttack(sel.type, sel.range, occupant.x - ax, occupant.y - ay)) {
-            showActionHint('目标超出攻击范围，无法锁定');
-            return;
+          const inRange = canAttack(sel.type, sel.range, occupant.x - ax, occupant.y - ay);
+          const canReach = inRange || findAttackCell(state, sel, occupant) !== null;
+          if (canReach) {
+            setAttackOrderChoice({ pieceId: sel.id, targetId: occupant.id });
+          } else {
+            // 无法攻击:取消当前棋子操作,并切到敌方信息面板
+            if (sel.path.length > 0) b.issue(sel.id, { clearPath: true });
+            b.select(occupant.id);
           }
-          b.issue(sel.id, { setAttackTarget: occupant.id });
           return;
         }
       }
 
+      // 点击移动后的新位置棋子(非当前选中,如已确认棋子):选中并展示信息
+      if (movedPiece) {
+        b.select(movedPiece.id);
+        setSelectTick((t) => t + 1);
+        return;
+      }
+
+      // 点击原地残影(已有路径的己方棋子原位置):不响应
+      if (occupant && occupant.team === 'player' && occupant.path.length > 0) {
+        return;
+      }
+
       if (occupant) {
         if (occupant.team === 'enemy' && !visible.has(key(x, y))) { b.select(null); return; }
-        b.select(occupant.id); return;
+        if (occupant.team === 'player' && occupant.id === state.selectedId) {
+          // 再次点击已选中的棋子:切换信息框(职业/血量/射程/移动/攻击/增益减益等)
+          setSelectTick((t) => t + 1);
+          return;
+        }
+        // 点击其他棋子:取消当前棋子的移动草稿,棋子回到原位,再选中新棋子
+        if (sel && sel.team === 'player' && !sel.acted && sel.path.length > 0) {
+          b.issue(sel.id, { clearPath: true });
+        }
+        b.select(occupant.id);
+        return;
+      }
+
+      // 点击范围外空格:取消当前棋子的移动草稿,棋子回到原位(还原操作)
+      if (sel && sel.team === 'player' && !sel.acted && sel.path.length > 0) {
+        b.issue(sel.id, { clearPath: true });
       }
       b.select(null);
     }
 
-    if ((state.phase === 'card1') && !b.busy) {
-      const occupant = at(state, x, y);
-      if (occupant) {
-        if (occupant.team === 'enemy' && !visible.has(key(x, y))) { b.select(null); return; }
-        b.select(occupant.id); return;
-      }
-      b.select(null);
-    }
   };
 
   const handlePhaseTimeout = () => {
@@ -343,10 +418,22 @@ export default function BattlePage() {
     const sel = state.pieces.find((p) => p.id === state.selectedId);
     if (!sel) { setHealChoice(null); return; }
     const target = state.pieces.find((p) => p.id === healChoice.pieceId);
+    if (!target) { setHealChoice(null); return; }
+    // 治疗范围以双方「移动后的最终落点」为基准
     const ax = sel.path.length ? sel.path[sel.path.length - 1].x : sel.x;
     const ay = sel.path.length ? sel.path[sel.path.length - 1].y : sel.y;
-    if (target && dist(ax, ay, target.x, target.y) > sel.range) {
-      showActionHint('距离过远，无法治疗该棋子');
+    const tx = target.path.length ? target.path[target.path.length - 1].x : target.x;
+    const ty = target.path.length ? target.path[target.path.length - 1].y : target.y;
+    if (dist(ax, ay, tx, ty) > sel.range) {
+      // 超出治疗范围:智能移动到能治疗到该目标的适合格子
+      const cell = findAttackCell(state, sel, { ...target, x: tx, y: ty });
+      if (cell) {
+        b.issue(sel.id, { waypoint: cell });
+        b.issue(sel.id, { setHealTarget: healChoice.pieceId });
+        setHealChoice(null);
+        return;
+      }
+      showActionHint('无法移动到能治疗该棋子的位置');
       return;
     }
     b.issue(sel.id, { setHealTarget: healChoice.pieceId });
@@ -358,6 +445,25 @@ export default function BattlePage() {
     const sel = state.pieces.find((p) => p.id === state.selectedId);
     if (sel) b.issue(sel.id, { waypoint: { x: healChoice.x, y: healChoice.y } });
     setHealChoice(null);
+  };
+
+  const moveConfirmPiece = moveConfirm ? state.pieces.find((p) => p.id === moveConfirm.pieceId) : null;
+
+  const confirmMove = () => {
+    if (!moveConfirm) return;
+    b.issue(moveConfirm.pieceId, { confirm: true });
+    b.select(null);
+    setMoveConfirm(null);
+  };
+
+  const attackOrderPiece = attackOrderChoice ? state.pieces.find((p) => p.id === attackOrderChoice.pieceId) : null;
+  const attackOrderTarget = attackOrderChoice ? state.pieces.find((p) => p.id === attackOrderChoice.targetId) : null;
+
+  const chooseAttackOrder = (order: 'first' | 'after') => {
+    if (!attackOrderChoice) return;
+    b.issue(attackOrderChoice.pieceId, { attackOrder: order });
+    b.issue(attackOrderChoice.pieceId, { setAttackTarget: attackOrderChoice.targetId });
+    setAttackOrderChoice(null);
   };
 
   const confirmCard = confirmPlay ? CARDS_BY_ID[confirmPlay.cardId] : null;
@@ -445,7 +551,9 @@ export default function BattlePage() {
         b={b}
         visible={visible}
         moveCells={moveCells}
-        rangeCells={rangeCells}
+        blockedCells={blockedCells}
+        enemyRangeCells={enemyRangeCells}
+        selectTick={selectTick}
         targetPieceIds={targetPieceIds}
         selectedTargetIds={selectedTargetIds}
         pendingCardId={pending?.cardId ?? null}
@@ -535,6 +643,76 @@ export default function BattlePage() {
                 onClick={() => setHealChoice(null)}
                 className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md font-label text-sm border border-background-300 text-foreground-700 hover:text-foreground-950 hover:border-background-400 cursor-pointer"
               >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {attackOrderChoice && attackOrderPiece && attackOrderTarget && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-background-950/70 backdrop-blur-sm" onClick={() => setAttackOrderChoice(null)}></div>
+          <div className="relative rune-border rounded-lg w-full max-w-xs p-5 bg-background-100">
+            <div className="text-center mb-4">
+              <div className="w-12 h-12 mx-auto mb-2 flex items-center justify-center rounded-full bg-secondary-500/15 border border-secondary-500/40 text-secondary-300">
+                <i className={`${BEASTS[attackOrderTarget.type].icon} text-2xl w-6 h-6 flex items-center justify-center`}></i>
+              </div>
+              <h2 className="font-heading text-lg text-foreground-950">攻击【{BEASTS[attackOrderTarget.type].name}】</h2>
+              <p className="text-xs text-foreground-600 mt-1">
+                {BEASTS[attackOrderPiece.type].name} 将攻击该目标，请选择执行阶段的攻击时机。
+              </p>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => chooseAttackOrder('first')}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-md font-label text-sm bg-primary-500 text-background-50 hover:bg-primary-600 cursor-pointer"
+              >
+                <i className="ri-sword-line w-4 h-4 flex items-center justify-center"></i>
+                先攻击，再移动
+              </button>
+              <button
+                onClick={() => chooseAttackOrder('after')}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-md font-label text-sm bg-accent-500 text-background-50 hover:bg-accent-600 cursor-pointer"
+              >
+                <i className="ri-run-line w-4 h-4 flex items-center justify-center"></i>
+                先移动，再攻击
+              </button>
+              <button
+                onClick={() => setAttackOrderChoice(null)}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md font-label text-sm border border-background-300 text-foreground-700 hover:text-foreground-950 hover:border-background-400 cursor-pointer"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {moveConfirm && moveConfirmPiece && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-background-950/70 backdrop-blur-sm" onClick={() => setMoveConfirm(null)}></div>
+          <div className="relative rune-border rounded-lg w-full max-w-xs p-5 bg-background-100">
+            <div className="text-center mb-4">
+              <div className="w-12 h-12 mx-auto mb-2 flex items-center justify-center rounded-full bg-primary-500/15 border border-primary-500/40 text-primary-300">
+                <i className={`${BEASTS[moveConfirmPiece.type].icon} text-2xl w-6 h-6 flex items-center justify-center`}></i>
+              </div>
+              <h2 className="font-heading text-lg text-foreground-950">是否移动到 {cellName(moveConfirm.x, moveConfirm.y)}？</h2>
+              <p className="text-xs text-foreground-600 mt-1">确认后 {BEASTS[moveConfirmPiece.type].name} 将移动到此格，并消耗 1 点行动点。</p>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={confirmMove}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-md font-label text-sm bg-primary-500 text-background-50 hover:bg-primary-600 cursor-pointer"
+              >
+                <i className="ri-check-line w-4 h-4 flex items-center justify-center"></i>
+                确认移动（-1 行动点）
+              </button>
+              <button
+                onClick={() => setMoveConfirm(null)}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md font-label text-sm border border-background-300 text-foreground-700 hover:text-foreground-950 hover:border-background-400 cursor-pointer"
+              >
+                <i className="ri-arrow-go-back-line w-4 h-4 flex items-center justify-center"></i>
                 取消
               </button>
             </div>
