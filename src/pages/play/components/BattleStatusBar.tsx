@@ -17,7 +17,7 @@ export default function BattleStatusBar({ state }: Props) {
       <PieceRow pieces={ally} tone="ally" />
       <span className="text-foreground-400 text-[10px] leading-none">|</span>
       <PieceRow pieces={enemy} tone="enemy" />
-      <Stat label="牌库" value={`${state.deck.length}`} tone="text-foreground-900" />
+      {!state.skillMode && <Stat label="牌库" value={`${state.deck.length}`} tone="text-foreground-900" />}
     </span>
   );
 }

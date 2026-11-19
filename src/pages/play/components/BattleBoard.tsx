@@ -21,12 +21,14 @@ interface Props {
   visible: Set<string>;
   selectedId: string | null;
   moveCells: Set<string>;
-  /** 移动范围外两圈的红色不可移动格子 */
-  blockedCells: Set<string>;
   /** 选中敌方棋子时的射程格子(红色) */
   enemyRangeCells: Set<string>;
+  /** 选中己方棋子时的攻击范围格子(金色) */
+  attackRangeCells: Set<string>;
   targetPieceIds: Set<string>;
   selectedTargetIds: Set<string>;
+  attackTargetIds: Set<string>;
+  healTargetIds: Set<string>;
   events: TurnEvent[];
   onCellClick: (x: number, y: number) => void;
   onZoomChange?: (zoom: number) => void;
@@ -37,7 +39,7 @@ interface Props {
 }
 
 const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
-  { state, visible, selectedId, moveCells, blockedCells, enemyRangeCells, targetPieceIds, selectedTargetIds, events, onCellClick, onZoomChange, bottomOverlay = 0, previewCell = null }: Props,
+  { state, visible, selectedId, moveCells, enemyRangeCells, attackRangeCells, targetPieceIds, selectedTargetIds, attackTargetIds, healTargetIds, events, onCellClick, onZoomChange, bottomOverlay = 0, previewCell = null }: Props,
   ref,
 ) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -357,8 +359,8 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
               const y = Math.floor(i / cols);
               const k = key(x, y);
               const isMove = moveCells.has(k);
-              const isBlocked = !isMove && blockedCells.has(k);
-              const isEnemyRange = !isMove && !isBlocked && enemyRangeCells.has(k);
+              const isAttackRange = !isMove && attackRangeCells.has(k);
+              const isEnemyRange = !isMove && !isAttackRange && enemyRangeCells.has(k);
               return (
                 <div
                   key={i}
@@ -379,14 +381,14 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
                       <div className="w-1.5 h-1.5 rounded-full bg-accent-200"></div>
                     </div>
                   )}
-                  {isBlocked && (
+                  {isAttackRange && (
                     <svg
                       className="absolute pointer-events-none"
-                      style={{ left: '6%', top: '6%', width: '88%', height: '88%', zIndex: 12, filter: 'drop-shadow(0 0 2px oklch(var(--secondary-400) / 0.5))' }}
+                      style={{ left: '6%', top: '6%', width: '88%', height: '88%', zIndex: 11, filter: 'drop-shadow(0 0 2px oklch(var(--primary-400) / 0.6))' }}
                       viewBox="0 0 100 100"
                       preserveAspectRatio="none"
                     >
-                      <polygon points="18,0 82,0 100,18 100,82 82,100 18,100 0,82 0,18" fill="oklch(var(--secondary-500) / 0.28)" stroke="oklch(var(--secondary-300))" strokeWidth="3" strokeLinejoin="round" />
+                      <polygon points="18,0 82,0 100,18 100,82 82,100 18,100 0,82 0,18" fill="oklch(var(--primary-500) / 0.30)" stroke="oklch(var(--primary-300))" strokeWidth="3" strokeLinejoin="round" />
                     </svg>
                   )}
                   {isEnemyRange && (
@@ -403,6 +405,32 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
               );
             })}
           </div>
+
+          {/* 地形:障碍物 / 黑洞 */}
+          {state.obstacles.map((k) => {
+            const [x, y] = k.split(',').map(Number);
+            return (
+              <div
+                key={`obstacle-${k}`}
+                className="absolute pointer-events-none"
+                style={{ left: `${(x / cols) * 100}%`, top: `${(y / rows) * 100}%`, width: `${CELL_PCT_X}%`, height: `${CELL_PCT_Y}%`, zIndex: 5 }}
+              >
+                <div className="absolute board-obstacle" style={{ inset: '8%' }} />
+              </div>
+            );
+          })}
+          {state.blackHoles.map((k) => {
+            const [x, y] = k.split(',').map(Number);
+            return (
+              <div
+                key={`blackhole-${k}`}
+                className="absolute pointer-events-none"
+                style={{ left: `${(x / cols) * 100}%`, top: `${(y / rows) * 100}%`, width: `${CELL_PCT_X}%`, height: `${CELL_PCT_Y}%`, zIndex: 5 }}
+              >
+                <div className="absolute board-blackhole" style={{ inset: '8%' }} />
+              </div>
+            );
+          })}
 
           {/* 部署阶段:中线两侧禁止放置的缓冲带 */}
           {state.phase === 'deploy' && (
@@ -545,7 +573,7 @@ const BattleBoard = forwardRef<BattleBoardHandle, Props>(function BattleBoard(
               piece={p}
                 revealLord={!state.lordBattle ? p.lordRevealed : p.team === 'player' || p.lordRevealed}
               selected={p.id === selectedId}
-              targetable={targetPieceIds.has(p.id)}
+              targetable={targetPieceIds.has(p.id) || attackTargetIds.has(p.id) || healTargetIds.has(p.id)}
               targeted={selectedTargetIds.has(p.id)}
               faded={(state.phase === 'command') && p.team === 'player' && (p.path.length > 0 || p.acted)}
               cols={cols}

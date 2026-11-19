@@ -46,6 +46,13 @@ export const CARDS_BY_ID: Record<string, CardDef> = Object.fromEntries(
   CARDS.map((c) => [c.id, c])
 );
 
+/** 卡牌技能的冷却回合数:0 点 → 1 回合,1 点 → 1 回合,2 点 → 2 回合 */
+export function cardCooldown(cardId: string): number {
+  const c = CARDS_BY_ID[cardId];
+  if (!c) return 1;
+  return c.cost === 0 ? 1 : c.cost;
+}
+
 export type CardRarity = 'common' | 'rare' | 'legendary';
 
 /** 稀有度:按消耗划分——0 普通 / 1 稀有 / 2 传说 */

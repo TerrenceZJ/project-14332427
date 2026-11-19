@@ -1,7 +1,7 @@
 import type { GameState, Piece, PieceType, Team, Mode, AttackOrder, TurnEvent, TurnFrame, Pt, LogSegment, AutoCommandStyle } from './types';
 import { BEASTS } from './beasts';
-import { COLS, ROWS, DEPLOY_GAP, START_AP, MAX_TURNS, HAND_SIZE, MAX_HAND, LINEUP_SIZE, key, inBounds, dist, cellName, midOf, canAttack } from './constants';
-import { CARDS, CARDS_BY_ID } from './cards';
+import { COLS, ROWS, DEPLOY_GAP, START_AP, MAX_TURNS, HAND_SIZE, MAX_HAND, LINEUP_SIZE, TERRAIN_RATIO, key, inBounds, dist, cellName, midOf, canAttack, isObstacle, isBlackHole, blocksLine } from './constants';
+import { CARDS, CARDS_BY_ID, cardCooldown } from './cards';
 import { visibleKeys, enemyVisibleKeys } from './vision';
 import { aiDeploy, aiCommand, planPath } from './ai';
 
@@ -18,8 +18,8 @@ const makePiece = (type: PieceType, team: Team, fromCard?: string): Piece => {
     type, team, fromCard, x: -1, y: -1, placed: false,
     hp: d.hp, maxHp: d.hp, atk: d.atk, range: d.range, move: d.move, heal: d.heal,
     isLord: false, lordRevealed: false, shieldTurns: 0, revived: false, alive: true,
-    mode: 'attack', attackOrder: 'after', facing: team === 'player' ? 'right' : 'left', path: [], attackTarget: undefined, healTarget: undefined, acted: false, revealed: team === 'player',
-    stunned: 0, blockHits: 0, dmgReduction: 0, bonusMove: 0, bonusAtk: 0, tempAtk: 0, dotImmunity: 0,
+    mode: 'attack', attackOrder: 'after', healOrder: 'after', facing: team === 'player' ? 'right' : 'left', path: [], attackTarget: undefined, healTarget: undefined, acted: false, revealed: team === 'player',
+    stunned: 0, blockHits: 0, dmgReduction: 0, bonusMove: 0, bonusAtk: 0, tempAtk: 0, dotImmunity: 0, skill: fromCard ?? '', skillCd: 0, usedSkill: false,
   };
 };
 
@@ -35,6 +35,8 @@ const clone = (s: GameState): GameState => ({
   enemyHand: [...s.enemyHand],
   dotZones: s.dotZones.map((z) => ({ ...z })),
   deployTrail: s.deployTrail.map((t) => ({ ...t })),
+  obstacles: [...s.obstacles],
+  blackHoles: [...s.blackHoles],
 });
 
 function shuffle<T>(arr: T[]): T[] {
@@ -86,9 +88,9 @@ function markRevealed(s: GameState) {
   }
 }
 
-export function createGame(cols: number = COLS, rows: number = ROWS, deployGap: number = DEPLOY_GAP, lineupSize: number = LINEUP_SIZE): GameState {
-  return {
-    phase: 'deploy', turn: 0, cols, rows, deployGap, lineupSize, skipCards: false, lordBattle: true, pieces: [], vision: [], ap: START_AP, enemyAp: START_AP, playerApPenalty: 0, enemyApPenalty: 0,
+export function createGame(cols: number = COLS, rows: number = ROWS, deployGap: number = DEPLOY_GAP, lineupSize: number = LINEUP_SIZE, skillMode: boolean = false): GameState {
+  const s: GameState = {
+    phase: 'deploy', turn: 0, cols, rows, deployGap, lineupSize, skipCards: skillMode, lordBattle: true, skillMode, pieces: [], vision: [], ap: START_AP, enemyAp: START_AP, playerApPenalty: 0, enemyApPenalty: 0,
     deck: shuffle(CARDS.map((c) => c.id)),
     hand: [],
     lastDrawnCardId: null,
@@ -99,10 +101,19 @@ export function createGame(cols: number = COLS, rows: number = ROWS, deployGap: 
     enemyLordPreset: null,
     enemyHpOverride: null,
     dotZones: [],
+    obstacles: [],
+    blackHoles: [],
+    terrainEnabled: true,
     winner: null, selectedId: null,
     deployTrail: [],
     log: [{ id: ++logSeq, text: `准备阶段:从卡组中挑选 ${lineupSize} 张卡牌出战,每张卡召唤一只对应种族的灵兽。`, team: 'player', kind: 'turn' }],
   };
+  // 开局即生成随机地形(障碍物 / 黑洞),部署阶段即可看到并规避
+  generateTerrain(s);
+  if (s.obstacles.length || s.blackHoles.length) {
+    pushLog(s, `战场异变:${s.obstacles.length} 处障碍与 ${s.blackHoles.length} 个黑洞随机生成,越靠近中心越密集。`, undefined, 'system');
+  }
+  return s;
 }
 
 export interface LevelPreset {
@@ -125,6 +136,8 @@ export interface LevelPreset {
   lordBattle?: boolean;
   /** 敌方灵主卡牌 id(默认随机指定) */
   enemyLord?: string;
+  /** 是否生成随机地形(障碍物 / 黑洞),默认关闭(教程关卡) */
+  terrain?: boolean;
 }
 
 /** 创建教程关卡:固定棋盘尺寸与双方阵容,玩家只需在部署阶段摆放位置 */
@@ -134,6 +147,11 @@ export function createLevelGame(level: LevelPreset): GameState {
   s.lineup = [...level.lineup];
   s.skipCards = !!level.skipCards;
   s.lordBattle = level.lordBattle ?? true;
+  s.terrainEnabled = level.terrain ?? false;
+  if (!s.terrainEnabled) {
+    s.obstacles = [];
+    s.blackHoles = [];
+  }
   s.enemyHpOverride = level.enemyHp ?? null;
   s.pieces = level.lineup.map((id) => makePiece(CARDS_BY_ID[id].owner, 'player', id));
   s.enemyLineupPreset = [...level.enemyLineup];
@@ -227,6 +245,7 @@ export function placePiece(state: GameState, pieceId: string, x: number, y: numb
   if (x >= midOf(state.cols) - state.deployGap || x < 0) return state;
   if (y < 0 || y >= state.rows) return state;
   if (at(state, x, y)) return state;
+  if (isObstacle(state.obstacles, x, y) || isBlackHole(state.blackHoles, x, y)) return state;
   const s = clone(state);
   const np = s.pieces.find((q) => q.id === pieceId)!;
   np.x = x; np.y = y; np.placed = true;
@@ -255,6 +274,7 @@ export function redeployPiece(state: GameState, pieceId: string, x: number, y: n
   if (x >= midOf(state.cols) - state.deployGap || x < 0) return state;
   if (y < 0 || y >= state.rows) return state;
   if (at(state, x, y)) return state;
+  if (isObstacle(state.obstacles, x, y) || isBlackHole(state.blackHoles, x, y)) return state;
   if (p.x === x && p.y === y) return state;
   const s = clone(state);
   const np = s.pieces.find((q) => q.id === pieceId)!;
@@ -280,7 +300,10 @@ export function autoDeploy(state: GameState): GameState {
   const mine = s.pieces.filter((p) => p.team === 'player');
   mine.forEach((p) => { p.x = -1; p.y = -1; p.placed = false; p.isLord = false; });
   const slots: { x: number; y: number }[] = [];
-  for (let y = 0; y < s.rows; y++) for (let x = 1; x < midOf(s.cols) - s.deployGap; x++) slots.push({ x, y });
+  for (let y = 0; y < s.rows; y++) for (let x = 1; x < midOf(s.cols) - s.deployGap; x++) {
+    if (isObstacle(s.obstacles, x, y) || isBlackHole(s.blackHoles, x, y)) continue;
+    slots.push({ x, y });
+  }
   slots.sort(() => Math.random() - 0.5);
   mine.forEach((p, i) => {
     const slot = slots[i % slots.length];
@@ -304,7 +327,7 @@ function drawCard(s: GameState, team: Team) {
 }
 
 /** 直接伤害结算(无视防御,尊重无敌/格挡/减伤);ignoreGuard 为真时无视一切防护(用于卡牌代价伤害) */
-function dealDirectDamage(s: GameState, p: Piece, amount: number, events?: TurnEvent[], ignoreGuard = false) {
+function dealDirectDamage(s: GameState, p: Piece, amount: number, events?: TurnEvent[], ignoreGuard = false, showNumber = true) {
   if (!p.alive) return;
   if (!ignoreGuard) {
     if (p.shieldTurns > 0) {
@@ -324,7 +347,8 @@ function dealDirectDamage(s: GameState, p: Piece, amount: number, events?: TurnE
   }
   if (amt <= 0) return;
   p.hp -= amt;
-  if (events) events.push({ type: 'attack', x: p.x, y: p.y, amount: amt });
+  // showNumber=false 时只结算伤害与死亡,不再逐次弹出伤害数字(总伤害数字由上层统一展示)
+  if (events && showNumber) events.push({ type: 'attack', x: p.x, y: p.y, amount: amt });
   if (p.hp <= 0) resolveDeath(s, p, events || []);
 }
 
@@ -345,6 +369,7 @@ function knockback(s: GameState, p: Piece, steps: number) {
     const ny = cy + dy;
     if (!inBounds(nx, ny, s.cols, s.rows)) break;
     if (at(s, nx, ny)) break;
+    if (isObstacle(s.obstacles, nx, ny)) break;
     cx = nx;
     cy = ny;
   }
@@ -623,6 +648,28 @@ export function playCard(state: GameState, cardId: string, caster: Team, targets
   return s;
 }
 
+/** 技能模式:棋子释放其自带技能(不消耗行动点,受冷却与每回合一次限制) */
+export function castSkill(state: GameState, pieceId: string, targets: { pieceIds: string[]; cell?: Pt }): GameState {
+  if (state.phase !== 'command' || !state.skillMode) return state;
+  const s = clone(state);
+  const p = s.pieces.find((q) => q.id === pieceId);
+  if (!p || p.team !== 'player' || !p.alive || !p.placed) return state;
+  if (p.acted || p.usedSkill || p.skillCd > 0 || !p.skill) return state;
+  const card = CARDS_BY_ID[p.skill];
+  if (!card) return state;
+  pushLog(s, [
+    { text: '你的' },
+    ...pieceRef(p),
+    { text: '释放了' },
+    { text: `【${card.name}】`, team: 'player' },
+  ], 'player', 'card');
+  applyCardEffect(s, p.skill, 'player', targets);
+  p.skillCd = cardCooldown(p.skill);
+  p.usedSkill = true;
+  checkVictory(s);
+  return s;
+}
+
 /** AI 出牌:从手牌中按优先级打出最多 2 张 */
 function aiPlayCards(state: GameState): GameState {
   const priority = [
@@ -689,6 +736,112 @@ function aiPlayCards(state: GameState): GameState {
   return s;
 }
 
+/** 技能模式:AI 为敌方棋子释放就绪技能(简单启发式选择目标) */
+function aiCastSkills(s: GameState): GameState {
+  if (!s.skillMode) return s;
+  const vis = enemyVisibleKeys(s);
+  const foes = s.pieces
+    .filter((p) => p.team === 'player' && p.alive && p.placed && vis.has(key(p.x, p.y)))
+    .sort((a, b) => a.hp - b.hp);
+  const allies = s.pieces.filter((p) => p.team === 'enemy' && p.alive && p.placed);
+
+  for (const e of s.pieces) {
+    if (e.team !== 'enemy' || !e.alive || !e.placed) continue;
+    if (e.skillCd > 0 || e.usedSkill || !e.skill) continue;
+    const card = CARDS_BY_ID[e.skill];
+    if (!card) continue;
+
+    let targets: { pieceIds: string[]; cell?: Pt } | null = null;
+    switch (card.target.kind) {
+      case 'none': {
+        // 治疗卡仅在己方有伤兵时用;范围伤害仅在能看到敌方时用;换位仅在敌方≥2时用
+        if (e.skill === 'c_heal') targets = allies.some((a) => a.hp < a.maxHp) ? { pieceIds: [] } : null;
+        else if (e.skill === 'c_rain' || e.skill === 'c_shuffle') targets = foes.length > 0 ? { pieceIds: [] } : null;
+        else if (e.skill === 'c_mana') targets = allies.length > 0 ? { pieceIds: [] } : null;
+        else targets = { pieceIds: [] }; // c_apup / c_apdown 无行动点环境下无意义,仍释放以进入冷却
+        break;
+      }
+      case 'enemy1': targets = foes[0] ? { pieceIds: [foes[0].id] } : null; break;
+      case 'enemy2': targets = foes.length >= 2 ? { pieceIds: [foes[0].id, foes[1].id] } : null; break;
+      case 'enemyAlly': {
+        const a = allies.find((x) => x.hp < x.maxHp) || allies[0];
+        targets = foes[0] && a ? { pieceIds: [foes[0].id, a.id] } : null;
+        break;
+      }
+      case 'ally1': {
+        const hurt = allies.filter((a) => a.hp < a.maxHp);
+        const t = hurt[0] || allies[0];
+        targets = t ? { pieceIds: [t.id] } : null;
+        break;
+      }
+      case 'ally2': {
+        const hurt = allies.filter((a) => a.hp < a.maxHp);
+        const picks = [...hurt, ...allies];
+        targets = picks.length >= 2 ? { pieceIds: [picks[0].id, picks[1].id] } : null;
+        break;
+      }
+      case 'cell': {
+        targets = foes[0] ? { pieceIds: [], cell: { x: foes[0].x, y: foes[0].y } } : null;
+        break;
+      }
+    }
+
+    if (!targets) continue;
+    pushLog(s, [
+      { text: '敌方' },
+      ...pieceRef(e),
+      { text: '释放了' },
+      { text: `【${card.name}】`, team: 'enemy' },
+    ], 'enemy', 'card');
+    applyCardEffect(s, e.skill, 'enemy', targets);
+    e.skillCd = cardCooldown(e.skill);
+    e.usedSkill = true;
+    checkVictory(s);
+  }
+  return s;
+}
+
+/** 生成随机地形:地图约 10% 的格子生成障碍物或黑洞,越靠近地图中心概率越高 */
+function generateTerrain(s: GameState) {
+  const total = Math.max(1, Math.round(s.cols * s.rows * TERRAIN_RATIO));
+  const occupied = new Set(s.pieces.filter((p) => p.alive && p.placed).map((p) => key(p.x, p.y)));
+  const cx = (s.cols - 1) / 2;
+  const cy = (s.rows - 1) / 2;
+  const halfX = Math.max(1, s.cols / 2);
+  const halfY = Math.max(1, s.rows / 2);
+  const pool: { x: number; y: number; w: number }[] = [];
+  for (let x = 0; x < s.cols; x++) {
+    for (let y = 0; y < s.rows; y++) {
+      if (occupied.has(key(x, y))) continue;
+      const nx = (x - cx) / halfX;
+      const ny = (y - cy) / halfY;
+      const d = Math.sqrt(nx * nx + ny * ny);
+      const w = Math.pow(1 - Math.min(1, d), 2) + 0.05;
+      pool.push({ x, y, w });
+    }
+  }
+  const obstacles: string[] = [];
+  const blackHoles: string[] = [];
+  // 黑洞数量控制在 1~2 个,其余地形均为障碍物
+  const blackHoleTarget = Math.min(Math.random() < 0.5 ? 1 : 2, total);
+  let placed = 0;
+  while (placed < total && pool.length > 0) {
+    const totalW = pool.reduce((a, c) => a + c.w, 0);
+    let r = Math.random() * totalW;
+    let idx = pool.length - 1;
+    for (let i = 0; i < pool.length; i++) {
+      r -= pool[i].w;
+      if (r <= 0) { idx = i; break; }
+    }
+    const cell = pool.splice(idx, 1)[0];
+    if (blackHoles.length < blackHoleTarget) blackHoles.push(key(cell.x, cell.y));
+    else obstacles.push(key(cell.x, cell.y));
+    placed += 1;
+  }
+  s.obstacles = obstacles;
+  s.blackHoles = blackHoles;
+}
+
 export function startBattle(state: GameState): GameState {
   if (state.phase !== 'deploy') return state;
   const mine = state.pieces.filter((p) => p.team === 'player');
@@ -729,11 +882,11 @@ export function startBattle(state: GameState): GameState {
   s.vision = [...visibleKeys(s)];
   markRevealed(s);
 
-  // 教程第 0 关:无卡牌,跳过抽卡阶段直接进入指令阶段
+  // 教程第 0 关 / 技能模式:无卡牌,跳过抽卡阶段直接进入指令阶段
   if (s.skipCards) {
     s.phase = 'command';
     pushLog(s, '—— 回合 1 · 指令阶段 · 为灵兽下达指令 ——', 'player', 'turn');
-    return aiCommand(s);
+    return aiCommand(aiCastSkills(s));
   }
 
   s.phase = 'command';
@@ -762,7 +915,6 @@ function pathTo(s: GameState, p: Piece, dest: Pt): Pt[] | null {
   const startK = key(p.x, p.y);
   const endK = key(dest.x, dest.y);
   const distMap = new Map<string, number>([[startK, 0]]);
-  const prev = new Map<string, string>();
   const queue: Pt[] = [{ x: p.x, y: p.y }];
   let head = 0;
   while (head < queue.length) {
@@ -773,24 +925,30 @@ function pathTo(s: GameState, p: Piece, dest: Pt): Pt[] | null {
       const nx = cur.x + dx;
       const ny = cur.y + dy;
       const nk = key(nx, ny);
-      if (!inBounds(nx, ny, s.cols, s.rows) || distMap.has(nk) || isCommandOccupied(others, nx, ny)) continue;
+      if (!inBounds(nx, ny, s.cols, s.rows) || distMap.has(nk) || isCommandOccupied(others, nx, ny) || isObstacle(s.obstacles, nx, ny)) continue;
       distMap.set(nk, steps + 1);
-      prev.set(nk, key(cur.x, cur.y));
-      if (nk === endK) {
-        const path: Pt[] = [];
-        let k = endK;
-        while (k !== startK) {
-          const [cx, cy] = k.split(',').map(Number);
-          path.push({ x: cx, y: cy });
-          k = prev.get(k)!;
-        }
-        path.reverse();
-        return path;
-      }
       queue.push({ x: nx, y: ny });
     }
   }
-  return null;
+  const endSteps = distMap.get(endK);
+  if (endSteps === undefined || endSteps > budget) return null;
+  // 回溯最短路径:每一步在上一步可达的相邻格中随机挑选,多方案时随机生成轨迹
+  const path: Pt[] = [];
+  let cur = dest;
+  let steps = endSteps;
+  while (steps > 0) {
+    path.push(cur);
+    const candidates: Pt[] = [];
+    for (const [dx, dy] of dirs) {
+      const nx = cur.x + dx;
+      const ny = cur.y + dy;
+      if (distMap.get(key(nx, ny)) === steps - 1) candidates.push({ x: nx, y: ny });
+    }
+    cur = candidates[Math.floor(Math.random() * candidates.length)];
+    steps -= 1;
+  }
+  path.reverse();
+  return path;
 }
 
 /** 找到棋子移动力范围内、能攻击到目标的最远落点(优先保持最远攻击距离);不可达返回 null */
@@ -812,7 +970,7 @@ export function findAttackCell(s: GameState, p: Piece, target: Piece): Pt | null
       const nx = cur.x + dx;
       const ny = cur.y + dy;
       const nk = key(nx, ny);
-      if (!inBounds(nx, ny, s.cols, s.rows) || distMap.has(nk) || isCommandOccupied(others, nx, ny)) continue;
+      if (!inBounds(nx, ny, s.cols, s.rows) || distMap.has(nk) || isCommandOccupied(others, nx, ny) || isObstacle(s.obstacles, nx, ny)) continue;
       distMap.set(nk, steps + 1);
       prev.set(nk, key(cur.x, cur.y));
       queue.push({ x: nx, y: ny });
@@ -826,6 +984,8 @@ export function findAttackCell(s: GameState, p: Piece, target: Piece): Pt | null
     if (k === startK) continue;
     const [x, y] = k.split(',').map(Number);
     if (!canAttack(p.type, p.range, target.x - x, target.y - y)) continue;
+    // 远程攻击被障碍物阻挡:仅攻击型棋子(治疗不计)需要视线
+    if (p.atk > 0 && blocksLine(s.obstacles, x, y, target.x, target.y)) continue;
     const d = dist(x, y, target.x, target.y);
     if (d > bestD || (d === bestD && steps > bestSteps)) {
       bestD = d;
@@ -839,7 +999,7 @@ export function findAttackCell(s: GameState, p: Piece, target: Piece): Pt | null
 export function command(
   state: GameState,
   pieceId: string,
-  patch: { waypoint?: { x: number; y: number }; clearPath?: boolean; confirm?: boolean; mode?: Mode; attackOrder?: AttackOrder; undoStep?: boolean; setAttackTarget?: string; setHealTarget?: string }
+  patch: { waypoint?: { x: number; y: number }; clearPath?: boolean; confirm?: boolean; mode?: Mode; attackOrder?: AttackOrder; healOrder?: AttackOrder; undoStep?: boolean; setAttackTarget?: string; setHealTarget?: string }
 ): GameState {
   if (state.phase !== 'command') return state;
   const s = clone(state);
@@ -849,8 +1009,9 @@ export function command(
   // 已下令的棋子在本回合锁定指令,不可再修改
   if (p.acted) return state;
 
-  // 结算指令消耗:每次 1 点行动点
+  // 结算指令消耗:每次 1 点行动点(技能模式无行动点,直接锁定)
   const charge = (cost: number) => {
+    if (s.skillMode) { p.acted = true; return true; }
     if (s.ap < cost) return false;
     s.ap -= cost;
     p.acted = true;
@@ -859,7 +1020,22 @@ export function command(
 
   // 点击移动范围内的目标格:直接规划完整正交路径(草稿),不消耗行动点
   if (patch.waypoint) {
-    const next = pathTo(s, p, patch.waypoint);
+    const dest = patch.waypoint;
+    // 当前路径终点(无路径时为棋子原位置)
+    const last = p.path.length ? p.path[p.path.length - 1] : { x: p.x, y: p.y };
+    // 点击与当前落点相邻的格子 → 逐格扩展,按点击顺序行进
+    if (Math.abs(dest.x - last.x) + Math.abs(dest.y - last.y) === 1) {
+      const budget = p.move + p.bonusMove;
+      if (p.path.length >= budget) return state;
+      if (!inBounds(dest.x, dest.y, s.cols, s.rows)) return state;
+      if (isObstacle(s.obstacles, dest.x, dest.y)) return state;
+      const others = s.pieces.filter((q) => q.id !== p.id);
+      if (isCommandOccupied(others, dest.x, dest.y)) return state;
+      p.path = [...p.path, { x: dest.x, y: dest.y }];
+      return s;
+    }
+    // 否则:直达目标,重新计算最短路径(存在多种方案时随机生成)
+    const next = pathTo(s, p, dest);
     if (!next) return state;
     p.path = next;
     return s;
@@ -903,13 +1079,19 @@ export function command(
     return s;
   }
 
+  // 切换治疗时机(先治疗再移动 / 先移动再治疗)
+  if (patch.healOrder !== undefined) {
+    p.healOrder = patch.healOrder;
+    return s;
+  }
+
   // 设置攻击目标(锁定目标即进入攻击模式);「先移动再攻击」且超出攻击范围时,自动移动到能打到目标的最远落点
   if (patch.setAttackTarget !== undefined) {
     const target = s.pieces.find((q) => q.id === patch.setAttackTarget && q.alive && q.placed && q.team !== p.team);
     if (target) {
       const ax = p.path.length ? p.path[p.path.length - 1].x : p.x;
       const ay = p.path.length ? p.path[p.path.length - 1].y : p.y;
-      if (p.attackOrder === 'after' && !canAttack(p.type, p.range, target.x - ax, target.y - ay)) {
+      if (p.attackOrder === 'after' && (!canAttack(p.type, p.range, target.x - ax, target.y - ay) || blocksLine(s.obstacles, ax, ay, target.x, target.y))) {
         const cell = findAttackCell(s, p, target);
         if (cell) {
           const np = pathTo(s, p, cell);
@@ -922,8 +1104,20 @@ export function command(
     return s;
   }
 
-  // 设置治疗目标
+  // 设置治疗目标;「先移动再治疗」且超出治疗范围时,自动移动到能治疗到目标的位置
   if (patch.setHealTarget !== undefined) {
+    const target = s.pieces.find((q) => q.id === patch.setHealTarget && q.alive && q.placed && q.team === p.team);
+    if (target) {
+      const ax = p.path.length ? p.path[p.path.length - 1].x : p.x;
+      const ay = p.path.length ? p.path[p.path.length - 1].y : p.y;
+      if (p.healOrder === 'after' && dist(ax, ay, target.x, target.y) > p.range) {
+        const cell = findAttackCell(s, p, target);
+        if (cell) {
+          const np = pathTo(s, p, cell);
+          if (np) p.path = np;
+        }
+      }
+    }
     p.healTarget = patch.setHealTarget || undefined;
     return s;
   }
@@ -979,7 +1173,7 @@ export function autoCommand(state: GameState, style: AutoCommandStyle = 'aggress
     }
 
     if (style === 'defensive') {
-      const inRange = best ? canAttack(a.type, a.range, best.x - a.x, best.y - a.y) : false;
+      const inRange = best ? canAttack(a.type, a.range, best.x - a.x, best.y - a.y) && !blocksLine(s.obstacles, a.x, a.y, best.x, best.y) : false;
       const canReach = best ? dist(a.x, a.y, best.x, best.y) <= moveBudget + a.range : false;
       if (inRange) {
         a.path = [];
@@ -1000,7 +1194,7 @@ export function autoCommand(state: GameState, style: AutoCommandStyle = 'aggress
     // aggressive / focusLord:主动压上
     if (best) {
       const d = dist(a.x, a.y, best.x, best.y);
-      const inRange = canAttack(a.type, a.range, best.x - a.x, best.y - a.y);
+      const inRange = canAttack(a.type, a.range, best.x - a.x, best.y - a.y) && !blocksLine(s.obstacles, a.x, a.y, best.x, best.y);
       // 目标处于无敌护盾时不再原地空打:未贴身则向前逼近/包抄,为下一回合破盾击杀铺路
       const approachShielded = best.shieldTurns > 0 && d > 1;
       a.path = !inRange || approachShielded ? planPath(a, best, s, moveBudget) : [];
@@ -1025,8 +1219,10 @@ export function confirmAll(state: GameState): GameState {
     if (p.team !== 'player' || !p.alive || !p.placed || p.acted) continue;
     const hasDraft = p.path.length > 0 || p.attackTarget !== undefined || p.healTarget !== undefined || p.mode === 'defend' || p.mode === 'standby';
     if (!hasDraft) continue;
-    if (s.ap < 1) continue;
-    s.ap -= 1;
+    if (!s.skillMode) {
+      if (s.ap < 1) continue;
+      s.ap -= 1;
+    }
     p.acted = true;
   }
   return s;
@@ -1066,7 +1262,7 @@ function legalMoves(s: GameState, p: Piece): Set<string> {
       const nx = cur.x + dx;
       const ny = cur.y + dy;
       const nk = key(nx, ny);
-      if (!inBounds(nx, ny, s.cols, s.rows) || distMap.has(nk) || isCommandOccupied(others, nx, ny)) continue;
+      if (!inBounds(nx, ny, s.cols, s.rows) || distMap.has(nk) || isCommandOccupied(others, nx, ny) || isObstacle(s.obstacles, nx, ny)) continue;
       distMap.set(nk, steps + 1);
       set.add(nk);
       queue.push({ x: nx, y: ny });
@@ -1102,6 +1298,36 @@ export function prepareExecute(state: GameState): GameState {
   });
   s.selectedId = null;
   return s;
+}
+
+/** 传送:棋子陷入黑洞后随机传送到任意空位,并丢弃剩余路径。落点需避开其他棋子当前位置、其他棋子本回合将要移动到的路径格、障碍物与黑洞,保证棋子不重叠 */
+function teleportFromBlackHole(s: GameState, p: Piece, events?: TurnEvent[]) {
+  // 不可落点集合:其他存活棋子的当前位置 + 它们本回合剩余的移动路径(预判未来占位)
+  const reserved = new Set<string>();
+  for (const q of s.pieces) {
+    if (!q.alive || !q.placed || q.id === p.id) continue;
+    reserved.add(key(q.x, q.y));
+    for (const c of q.path) reserved.add(key(c.x, c.y));
+  }
+  const free: Pt[] = [];
+  for (let y = 0; y < s.rows; y++) {
+    for (let x = 0; x < s.cols; x++) {
+      if (x === p.x && y === p.y) continue;
+      if (reserved.has(key(x, y))) continue;
+      if (isObstacle(s.obstacles, x, y) || isBlackHole(s.blackHoles, x, y)) continue;
+      free.push({ x, y });
+    }
+  }
+  if (free.length === 0) return;
+  const dest = free[Math.floor(Math.random() * free.length)];
+  p.x = dest.x;
+  p.y = dest.y;
+  p.path = [];
+  pushLog(s, [
+    ...pieceRef(p),
+    { text: ` 陷入黑洞,被传送到 ${cellName(dest.x, dest.y)}!` },
+  ], p.team, 'info');
+  if (events) events.push({ type: 'teleport', x: dest.x, y: dest.y, text: '传送' });
 }
 
 /** 执行本回合指令,拆分为逐帧动画序列,让玩家看清每一步 */
@@ -1146,8 +1372,31 @@ export function executeTurn(input: GameState): TurnFrame[] {
   // 帧 0:执行开始,定格原始站位(含战前宣告信息)
   pushFrame(700);
 
-  // 1) 先攻击再移动的棋子:移动前从原始位置发动攻击(命中即结算,被击杀者不再移动)
+  // 1) 先攻击/先治疗的棋子:移动前从原始位置结算(优先级:治疗 > 攻击)
   {
+    // —— 先治疗(治疗时机 = first) ——
+    const firstHeals = new Map<string, number>();
+    const firstHealEvents: TurnEvent[] = [];
+    for (const p of s.pieces) {
+      if (!p.alive || !p.placed || p.mode === 'defend' || p.mode === 'standby' || p.stunned > 0) continue;
+      if (p.atk > 0 || p.heal <= 0 || p.healOrder !== 'first') continue;
+      const t = p.healTarget
+        ? s.pieces.find((o) => o.id === p.healTarget && o.alive && o.placed && o.team === p.team && dist(p.x, p.y, o.x, o.y) <= p.range)
+        : undefined;
+      if (!t) continue;
+      firstHeals.set(t.id, (firstHeals.get(t.id) || 0) + p.heal);
+      firstHealEvents.push({ type: 'heal', x: t.x, y: t.y, amount: p.heal });
+    }
+    if (firstHealEvents.length > 0) {
+      for (const p of s.pieces) {
+        if (!p.alive) continue;
+        const h = firstHeals.get(p.id);
+        if (h) p.hp = Math.min(p.maxHp, p.hp + h);
+      }
+      pushFrame(1300, firstHealEvents);
+    }
+
+    // —— 先攻击(攻击时机 = first) ——
     const firstDmg = new Map<string, number>();
     const firstAttacks: { targetId: string; amount: number }[] = [];
     const firstEvents: TurnEvent[] = [];
@@ -1156,7 +1405,7 @@ export function executeTurn(input: GameState): TurnFrame[] {
       if (p.mode !== 'attack' || p.atk <= 0 || p.attackOrder !== 'first') continue;
       const effAtk = p.atk + p.bonusAtk + p.tempAtk;
       const t = p.attackTarget
-        ? s.pieces.find((o) => o.id === p.attackTarget && o.alive && o.placed && o.team !== p.team && canAttack(p.type, p.range, o.x - p.x, o.y - p.y))
+        ? s.pieces.find((o) => o.id === p.attackTarget && o.alive && o.placed && o.team !== p.team && canAttack(p.type, p.range, o.x - p.x, o.y - p.y) && !blocksLine(s.obstacles, p.x, p.y, o.x, o.y))
         : undefined;
       if (!t) continue;
       if (t.shieldTurns > 0) {
@@ -1190,11 +1439,11 @@ export function executeTurn(input: GameState): TurnFrame[] {
         const d = firstDmg.get(p.id);
         if (d) firstDamageEvents.push({ type: 'attack', x: p.x, y: p.y, amount: d });
       }
-      if (firstDamageEvents.length > 0) pushFrame(100, firstDamageEvents);
+      if (firstDamageEvents.length > 0) pushFrame(900, firstDamageEvents);
       const firstDeathEvents: TurnEvent[] = [];
       for (const atk of firstAttacks) {
         const p = s.pieces.find((o) => o.id === atk.targetId);
-        if (p) dealDirectDamage(s, p, atk.amount, firstDeathEvents);
+        if (p) dealDirectDamage(s, p, atk.amount, firstDeathEvents, false, false);
       }
       if (firstDeathEvents.length > 0) pushFrame(1500, firstDeathEvents);
     }
@@ -1209,10 +1458,19 @@ export function executeTurn(input: GameState): TurnFrame[] {
 
   for (let step = 0; step < maxStep; step++) {
     let moved = false;
+    const stepEvents: TurnEvent[] = [];
     const claims = new Map<string, { m: (typeof movers)[number]; x: number; y: number }[]>();
     for (const m of movers) {
       if (m.stopped || m.idx >= m.p.path.length) continue;
       const next = m.p.path[m.idx];
+      // 落入黑洞:随机传送到任意空位,本回合不再继续移动
+      if (isBlackHole(s.blackHoles, next.x, next.y)) {
+        teleportFromBlackHole(s, m.p, stepEvents);
+        m.idx = m.p.path.length;
+        m.stopped = true;
+        moved = true;
+        continue;
+      }
       const blocker = at(s, next.x, next.y);
       if (blocker) {
         // 暂时被堵:先记为停止,等所有棋子移动结束后再统一判定一次
@@ -1247,24 +1505,38 @@ export function executeTurn(input: GameState): TurnFrame[] {
     if (moved) markRevealed(s);
     // 本帧发生的移动,与画面同帧写入战斗日志
     logStepMoves(stepMoves);
-    pushFrame(moved ? 750 : 0);
+    pushFrame(moved ? 750 : 0, stepEvents);
   }
 
   // 二次判定:所有棋子移动结束后,原本被堵的棋子若前方已空出,可继续前往目标位置
   // 处理「挡路的相邻棋子本回合移开后,被堵棋子仍能抵达目的地」的特殊情况
   for (let round = 0; round < s.cols + s.rows; round++) {
     const retry = new Map<string, { m: (typeof movers)[number]; x: number; y: number }[]>();
+    const retryEvents: TurnEvent[] = [];
+    let moved = false;
     for (const m of movers) {
       if (!m.stopped || m.idx >= m.p.path.length) continue;
       const next = m.p.path[m.idx];
       if (at(s, next.x, next.y)) continue;
+      if (isBlackHole(s.blackHoles, next.x, next.y)) {
+        teleportFromBlackHole(s, m.p, retryEvents);
+        m.idx = m.p.path.length;
+        moved = true;
+        continue;
+      }
       const k = key(next.x, next.y);
       const list = retry.get(k) || [];
       list.push({ m, x: next.x, y: next.y });
       retry.set(k, list);
     }
-    if (retry.size === 0) break;
-    let moved = false;
+    if (retry.size === 0) {
+      // 仅发生黑洞传送时,也要补一帧展示传送效果
+      if (moved) {
+        markRevealed(s);
+        pushFrame(750, retryEvents);
+      }
+      break;
+    }
     const stepMoves: { p: Piece; from: Pt }[] = [];
     for (const list of retry.values()) {
       const winner = list[Math.floor(Math.random() * list.length)];
@@ -1284,7 +1556,7 @@ export function executeTurn(input: GameState): TurnFrame[] {
     if (moved) {
       markRevealed(s);
       logStepMoves(stepMoves);
-      pushFrame(750);
+      pushFrame(750, retryEvents);
     }
   }
 
@@ -1320,7 +1592,8 @@ export function executeTurn(input: GameState): TurnFrame[] {
   for (const p of s.pieces) {
     if (!p.alive || !p.placed || p.mode === 'defend' || p.mode === 'standby' || p.stunned > 0) continue;
     if (p.atk <= 0) {
-      if (p.heal > 0) {
+      // 先治疗的棋子已在移动前结算,这里仅处理「先移动再治疗」
+      if (p.heal > 0 && p.healOrder === 'after') {
         let t: Piece | undefined;
         if (p.team === 'player') {
           if (p.healTarget) {
@@ -1345,7 +1618,7 @@ export function executeTurn(input: GameState): TurnFrame[] {
     const effAtk = p.atk + p.bonusAtk + p.tempAtk;
     let t: Piece | undefined;
     if (p.attackTarget) {
-      t = s.pieces.find((o) => o.id === p.attackTarget && o.alive && o.placed && o.team !== p.team && canAttack(p.type, p.range, o.x - p.x, o.y - p.y));
+      t = s.pieces.find((o) => o.id === p.attackTarget && o.alive && o.placed && o.team !== p.team && canAttack(p.type, p.range, o.x - p.x, o.y - p.y) && !blocksLine(s.obstacles, p.x, p.y, o.x, o.y));
     }
     if (!t) {
       // 先移动再攻击却无法命中目标:气馁(攻击失败)
@@ -1418,14 +1691,14 @@ export function executeTurn(input: GameState): TurnFrame[] {
     }
   }
   if (damageEvents.length > 0) {
-    pushFrame(100, damageEvents);
+    pushFrame(900, damageEvents);
   }
 
   // 6) 死亡帧:逐次结算伤害,灵主重生获得的无敌护盾会挡下本回合的溢出伤害
   const deathEvents: TurnEvent[] = [];
   for (const atk of attacks) {
     const p = s.pieces.find((o) => o.id === atk.targetId);
-    if (p) dealDirectDamage(s, p, atk.amount, deathEvents);
+    if (p) dealDirectDamage(s, p, atk.amount, deathEvents, false, false);
   }
   if (deathEvents.length > 0) {
     pushFrame(1500, deathEvents);
@@ -1541,6 +1814,8 @@ export function beginNextTurn(state: GameState): GameState {
     p.attackTarget = undefined; p.healTarget = undefined;
     p.bonusMove = 0;
     p.tempAtk = 0;
+    p.usedSkill = false;
+    if (p.skillCd > 0) p.skillCd -= 1;
   });
   s.pieces.forEach((p) => {
     if (!p.alive) return;
@@ -1551,11 +1826,11 @@ export function beginNextTurn(state: GameState): GameState {
 
   s.selectedId = null;
 
-  // 教程第 0 关:无卡牌,直接进入指令阶段
+  // 教程第 0 关 / 技能模式:无卡牌,直接进入指令阶段
   if (s.skipCards) {
     s.phase = 'command';
     pushLog(s, `—— 回合 ${s.turn} · 指令阶段 · 为灵兽下达指令 ——`, 'player', 'turn');
-    return aiCommand(s);
+    return aiCommand(aiCastSkills(s));
   }
 
   // 先清空新抽牌标记,再抽牌:牌库为空或手牌已满时不会留下上一回合的旧标记,

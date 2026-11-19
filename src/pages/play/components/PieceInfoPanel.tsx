@@ -1,13 +1,16 @@
 import type { Piece } from '@/game/types';
 import { BEASTS } from '@/game/beasts';
 import { getPieceBuffs } from '@/game/buffs';
+import { CARDS_BY_ID } from '@/game/cards';
 
 interface Props {
   piece: Piece;
   onClose: () => void;
+  /** 技能模式:展示棋子自带技能与冷却 */
+  skillMode?: boolean;
 }
 
-export default function PieceInfoPanel({ piece, onClose }: Props) {
+export default function PieceInfoPanel({ piece, onClose, skillMode = false }: Props) {
   const def = BEASTS[piece.type];
   const isPlayer = piece.team === 'player';
   const hpPct = Math.max(0, Math.min(1, piece.hp / piece.maxHp));
@@ -66,6 +69,23 @@ export default function PieceInfoPanel({ piece, onClose }: Props) {
         <Stat label="增益" value={gainsText} />
         <Stat label="减益" value={debuffsText} />
       </div>
+
+      {/* 技能模式:展示棋子自带技能名称、描述与冷却状态 */}
+      {skillMode && piece.skill && (() => {
+        const sk = CARDS_BY_ID[piece.skill];
+        return (
+          <div className="mt-1.5 pt-1.5 border-t border-background-200">
+            <div className="flex items-center gap-1.5">
+              <span className="font-label text-[10px] text-foreground-600 whitespace-nowrap">技能</span>
+              <span className="font-heading text-xs text-primary-300 truncate">{sk?.name ?? piece.skill}</span>
+              <span className="font-heading text-[10px] text-foreground-600 tabular-nums shrink-0">
+                {piece.skillCd > 0 ? `冷却 ${piece.skillCd} 回合` : piece.usedSkill ? '本回合已用' : '就绪'}
+              </span>
+            </div>
+            {sk?.desc && <p className="text-[11px] text-foreground-700 leading-relaxed mt-1">{sk.desc}</p>}
+          </div>
+        );
+      })()}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import type { GameState, Piece, Pt } from './types';
-import { dist, inBounds, key, midOf, canAttack } from './constants';
+import { dist, inBounds, key, midOf, canAttack, isObstacle, isBlackHole, blocksLine } from './constants';
 import { enemyVisibleKeys } from './vision';
 
 /** AI 部署:右半场分散布置,并随机指定一只为灵主 */
@@ -8,7 +8,10 @@ export function aiDeploy(s: GameState) {
   mine.forEach((p) => { p.x = -1; p.y = -1; p.placed = false; p.isLord = false; });
 
   const slots: { x: number; y: number }[] = [];
-  for (let y = 0; y < s.rows; y++) for (let x = midOf(s.cols) + s.deployGap; x < s.cols - 1; x++) slots.push({ x, y });
+  for (let y = 0; y < s.rows; y++) for (let x = midOf(s.cols) + s.deployGap; x < s.cols - 1; x++) {
+    if (isObstacle(s.obstacles, x, y) || isBlackHole(s.blackHoles, x, y)) continue;
+    slots.push({ x, y });
+  }
   slots.sort(() => Math.random() - 0.5);
 
   mine.forEach((p, i) => {
@@ -36,7 +39,8 @@ export function aiCommand(state: GameState): GameState {
   const vis = enemyVisibleKeys(s);
   const targets = s.pieces.filter((p) => p.team === 'player' && p.alive && p.placed && vis.has(key(p.x, p.y)));
 
-  let ap = s.enemyAp;
+  // 技能模式无行动点:AI 可自由移动所有棋子
+  let ap = s.skillMode ? Infinity : s.enemyAp;
 
   // 看不到任何玩家棋子时:主动向玩家半场推进揭开迷雾,避免双方僵持不动
   if (!targets.length) {
@@ -68,7 +72,7 @@ export function aiCommand(state: GameState): GameState {
     }
     if (!best) continue;
 
-    const inRange = canAttack(e.type, e.range, best.x - e.x, best.y - e.y);
+    const inRange = canAttack(e.type, e.range, best.x - e.x, best.y - e.y) && (e.atk <= 0 || !blocksLine(s.obstacles, e.x, e.y, best.x, best.y));
     if (!inRange) {
       if (ap < 1) continue; // 无行动点,无法移动
       ap -= 1;
@@ -85,7 +89,7 @@ export function aiCommand(state: GameState): GameState {
     }
   }
 
-  s.enemyAp = ap;
+  s.enemyAp = s.skillMode ? s.enemyAp : ap;
   return s;
 }
 
@@ -95,6 +99,7 @@ export function planPath(e: Piece, target: Pt, s: GameState, budget: number): Pt
 
   const blocked = (x: number, y: number) =>
     !inBounds(x, y, s.cols, s.rows) ||
+    isObstacle(s.obstacles, x, y) ||
     s.pieces.some((q) => q.alive && q.placed && q.id !== e.id && q.x === x && q.y === y);
 
   const startK = key(e.x, e.y);
@@ -125,7 +130,7 @@ export function planPath(e: Piece, target: Pt, s: GameState, budget: number): Pt
   for (const [k, steps] of distMap) {
     if (k === startK) continue;
     const [x, y] = k.split(',').map(Number);
-    if (canAttack(e.type, e.range, target.x - x, target.y - y) && steps < bestSteps) {
+    if (canAttack(e.type, e.range, target.x - x, target.y - y) && (e.atk <= 0 || !blocksLine(s.obstacles, x, y, target.x, target.y)) && steps < bestSteps) {
       bestSteps = steps;
       bestPt = { x, y };
     }

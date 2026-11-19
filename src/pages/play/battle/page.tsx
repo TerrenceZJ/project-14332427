@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useBattle } from '@/pages/play/hooks/useBattle';
-import { visibleKeys, legalMoves, at, createGame, createLevelGame, findAttackCell } from '@/game/engine';
-import { key, inBounds, cellName, dist, canAttack } from '@/game/constants';
+import { visibleKeys, legalMoves, at, createGame, createLevelGame } from '@/game/engine';
+import { key, inBounds, cellName, dist, canAttack, blocksLine, COLS, ROWS, DEPLOY_GAP, LINEUP_SIZE } from '@/game/constants';
 import { CARDS_BY_ID } from '@/game/cards';
 import { BEASTS } from '@/game/beasts';
 import { TUTORIAL_LEVELS } from '@/game/levels';
@@ -23,20 +23,23 @@ interface Pending {
   cell: { x: number; y: number } | null;
 }
 
-interface HealChoice {
-  x: number;
-  y: number;
+/** 棋子指令向导:点击己方棋子后,引导玩家选择攻击/治疗时机与目标/移动 */
+interface PieceCmd {
   pieceId: string;
+  /** null = 尚未选择攻击时机(弹出选择框);'first' = 先攻击再移动;'after' = 先移动再攻击 */
+  order: 'first' | 'after' | null;
+  /** 已锁定的攻击目标(先攻击流程先选目标,先移动流程先规划移动后选目标) */
+  targetId: string | null;
 }
 
-export default function BattlePage() {
+export default function BattlePage({ skillMode = false }: { skillMode?: boolean }) {
   const navigate = useNavigate();
   const { levelId } = useParams();
   const level = levelId != null ? TUTORIAL_LEVELS.find((l) => l.id === Number(levelId)) : undefined;
   const createInitial = useMemo(() => {
     if (level) return () => createLevelGame(level.preset);
-    return () => createGame();
-  }, [level]);
+    return () => createGame(COLS, ROWS, DEPLOY_GAP, LINEUP_SIZE, skillMode);
+  }, [level, skillMode]);
   const b = useBattle(createInitial);
   const { state } = b;
   const [tutorialStep, setTutorialStep] = useState(0);
@@ -45,11 +48,11 @@ export default function BattlePage() {
   const [summonOpen, setSummonOpen] = useState(!level);
   const [enemyDeckOpen, setEnemyDeckOpen] = useState(false);
   const [drawReveal, setDrawReveal] = useState<string | null>(null);
-  const [healChoice, setHealChoice] = useState<HealChoice | null>(null);
   const [moveConfirm, setMoveConfirm] = useState<{ pieceId: string; x: number; y: number } | null>(null);
-  const [attackOrderChoice, setAttackOrderChoice] = useState<{ pieceId: string; targetId: string } | null>(null);
+  const [pieceCmd, setPieceCmd] = useState<PieceCmd | null>(null);
   const [selectTick, setSelectTick] = useState(0);
   const [confirmPlay, setConfirmPlay] = useState<Pending | null>(null);
+  const [skillCasterId, setSkillCasterId] = useState<string | null>(null);
   const [autoStyle, setAutoStyle] = useState<AutoCommandStyle>('aggressive');
   const [endCommandConfirm, setEndCommandConfirm] = useState(false);
   const [actionHint, setActionHint] = useState<string | null>(null);
@@ -73,10 +76,10 @@ export default function BattlePage() {
     if (state.phase !== 'command') setPending(null);
     if (state.phase !== 'command') setDrawReveal(null);
     setPhaseEndNotice(false);
-    setHealChoice(null);
     setMoveConfirm(null);
-    setAttackOrderChoice(null);
+    setPieceCmd(null);
     setConfirmPlay(null);
+    setSkillCasterId(null);
     if (state.phase !== 'command') setEnemyDeckOpen(false);
     if (noticeTimer.current) { window.clearTimeout(noticeTimer.current); noticeTimer.current = null; }
   }, [state.phase]);
@@ -86,6 +89,15 @@ export default function BattlePage() {
     if (drawRevealTimer.current) window.clearTimeout(drawRevealTimer.current);
     if (actionHintTimer.current) window.clearTimeout(actionHintTimer.current);
   }, []);
+
+  // 指令向导:棋子已下令 / 不再可选 / 被切换选中时,自动结束向导
+  useEffect(() => {
+    if (!pieceCmd) return;
+    const p = state.pieces.find((q) => q.id === pieceCmd.pieceId);
+    if (!p || !p.alive || !p.placed || p.acted || state.selectedId !== pieceCmd.pieceId) {
+      setPieceCmd(null);
+    }
+  }, [pieceCmd, state.pieces, state.selectedId]);
 
   useEffect(() => {
     if (prevPhaseRef.current !== state.phase) {
@@ -135,25 +147,6 @@ export default function BattlePage() {
     return new Set<string>();
   }, [state, selected]);
 
-  // 红色不可移动范围:移动范围外两圈(提示本回合够不着的格子)
-  const blockedCells = useMemo(() => {
-    const set = new Set<string>();
-    if (!selected || !selected.alive || !selected.placed) return set;
-    if (state.phase !== 'command' || selected.team !== 'player' || selected.acted) return set;
-    const budget = selected.move + selected.bonusMove;
-    if (budget <= 0) return set;
-    for (let dy = -budget - 2; dy <= budget + 2; dy++) {
-      for (let dx = -budget - 2; dx <= budget + 2; dx++) {
-        const d = Math.abs(dx) + Math.abs(dy);
-        if (d <= budget || d > budget + 2) continue;
-        const nx = selected.x + dx;
-        const ny = selected.y + dy;
-        if (inBounds(nx, ny, state.cols, state.rows)) set.add(key(nx, ny));
-      }
-    }
-    return set;
-  }, [selected, state.phase, state.cols, state.rows]);
-
   // 选中敌方棋子时显示的射程格子(红色)
   const enemyRangeCells = useMemo(() => {
     const set = new Set<string>();
@@ -166,11 +159,80 @@ export default function BattlePage() {
         if (!canAttack(selected.type, selected.range, dx, dy)) continue;
         const nx = selected.x + dx;
         const ny = selected.y + dy;
-        if (inBounds(nx, ny, state.cols, state.rows)) set.add(key(nx, ny));
+        if (!inBounds(nx, ny, state.cols, state.rows)) continue;
+        // 障碍物阻挡远程攻击:被挡住的射程格不再高亮
+        if (blocksLine(state.obstacles, selected.x, selected.y, nx, ny)) continue;
+        set.add(key(nx, ny));
       }
     }
     return set;
-  }, [selected, state.phase, state.cols, state.rows]);
+  }, [selected, state.phase, state.cols, state.rows, state.obstacles]);
+
+  // 指令向导:高亮可选中的敌方目标(先攻击流程基于原位,先移动流程基于移动后落点)
+  const attackTargetIds = useMemo(() => {
+    const set = new Set<string>();
+    if (!pieceCmd || pieceCmd.order === null) return set;
+    const p = state.pieces.find((q) => q.id === pieceCmd.pieceId);
+    if (!p || !p.alive || !p.placed || p.acted || p.atk <= 0) return set;
+    const ax = pieceCmd.order === 'first' ? p.x : p.path.length ? p.path[p.path.length - 1].x : p.x;
+    const ay = pieceCmd.order === 'first' ? p.y : p.path.length ? p.path[p.path.length - 1].y : p.y;
+    for (const o of state.pieces) {
+      if (o.team !== 'enemy' || !o.alive || !o.placed) continue;
+      if (!visible.has(key(o.x, o.y))) continue;
+      if (!canAttack(p.type, p.range, o.x - ax, o.y - ay)) continue;
+      if (blocksLine(state.obstacles, ax, ay, o.x, o.y)) continue;
+      set.add(o.id);
+    }
+    return set;
+  }, [pieceCmd, state.pieces, state.obstacles, visible]);
+
+  // 指令向导:高亮可选中的己方治疗目标(先治疗流程基于原位,先移动流程基于移动后落点)
+  const healTargetIds = useMemo(() => {
+    const set = new Set<string>();
+    if (!pieceCmd || pieceCmd.order === null) return set;
+    const p = state.pieces.find((q) => q.id === pieceCmd.pieceId);
+    if (!p || !p.alive || !p.placed || p.acted || p.heal <= 0) return set;
+    const ax = pieceCmd.order === 'first' ? p.x : p.path.length ? p.path[p.path.length - 1].x : p.x;
+    const ay = pieceCmd.order === 'first' ? p.y : p.path.length ? p.path[p.path.length - 1].y : p.y;
+    for (const o of state.pieces) {
+      if (o.team !== 'player' || !o.alive || !o.placed || o.id === p.id) continue;
+      if (dist(ax, ay, o.x, o.y) > p.range) continue;
+      set.add(o.id);
+    }
+    return set;
+  }, [pieceCmd, state.pieces]);
+
+  // 指令向导:选中棋子的攻击范围格子(先攻击流程锁定目标前 / 先移动流程规划移动后显示)
+  const wizardAttackCells = useMemo(() => {
+    const set = new Set<string>();
+    if (!pieceCmd || pieceCmd.order === null) return set;
+    const p = state.pieces.find((q) => q.id === pieceCmd.pieceId);
+    if (!p || !p.alive || !p.placed || p.acted || p.atk <= 0) return set;
+    const visible = pieceCmd.order === 'first' ? !pieceCmd.targetId : p.path.length > 0;
+    if (!visible) return set;
+    const ax = pieceCmd.order === 'first' ? p.x : p.path[p.path.length - 1].x;
+    const ay = pieceCmd.order === 'first' ? p.y : p.path[p.path.length - 1].y;
+    const r = p.range;
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        if (!canAttack(p.type, p.range, dx, dy)) continue;
+        const nx = ax + dx;
+        const ny = ay + dy;
+        if (!inBounds(nx, ny, state.cols, state.rows)) continue;
+        if (blocksLine(state.obstacles, ax, ay, nx, ny)) continue;
+        set.add(key(nx, ny));
+      }
+    }
+    return set;
+  }, [pieceCmd, state.pieces, state.obstacles, state.cols, state.rows]);
+
+  // 指令向导进行时,可移动范围仅在「先攻击/治疗流程选完目标后」或「先移动流程」显示
+  const wizardMoveCells = useMemo(() => {
+    if (!pieceCmd) return moveCells;
+    if (pieceCmd.order === 'first' && !pieceCmd.targetId) return new Set<string>();
+    return moveCells;
+  }, [pieceCmd, moveCells]);
 
   const pendingCard = pending ? CARDS_BY_ID[pending.cardId] : null;
 
@@ -225,6 +287,19 @@ export default function BattlePage() {
   // 区域卡预览中心(仅区域卡选中后显示 3×3 范围)
   const previewCell = pending && pendingCard?.target.kind === 'cell' ? pending.cell : null;
 
+  // 指令向导的顶部提示文案
+  const pieceCmdHint = useMemo(() => {
+    if (!pieceCmd || pieceCmd.order === null) return null;
+    const p = state.pieces.find((q) => q.id === pieceCmd.pieceId);
+    const name = p ? BEASTS[p.type].name : '灵兽';
+    const isHealer = !!p && p.heal > 0 && p.atk <= 0;
+    const act = isHealer ? '治疗' : '攻击';
+    if (pieceCmd.order === 'first' && !pieceCmd.targetId) return `${name}：先${act} — 请点击${isHealer ? '己方棋子' : '敌方棋子'}锁定目标`;
+    if (pieceCmd.order === 'first' && pieceCmd.targetId) return `${name}：已锁定目标 — 请点击高亮格子规划移动`;
+    if (pieceCmd.order === 'after' && !pieceCmd.targetId) return `${name}：先移动 — 请规划路线，再点击${isHealer ? '己方棋子' : '敌方棋子'}${act}`;
+    return `${name}：已锁定目标，确认移动即可`;
+  }, [pieceCmd, state.pieces]);
+
   const handlePlayCard = (cardId: string) => {
     const card = CARDS_BY_ID[cardId];
     if (!card) return;
@@ -232,7 +307,23 @@ export default function BattlePage() {
       b.playCard(cardId, { pieceIds: [] });
       return;
     }
+    setPieceCmd(null);
+    setSkillCasterId(null);
     setPending({ cardId, pieceIds: [], cell: null });
+  };
+
+  const handlePlaySkill = (pieceId: string) => {
+    const p = state.pieces.find((q) => q.id === pieceId);
+    if (!p || !p.skill) return;
+    const card = CARDS_BY_ID[p.skill];
+    if (!card) return;
+    if (card.target.kind === 'none') {
+      b.castSkill(pieceId, { pieceIds: [] });
+      return;
+    }
+    setPieceCmd(null);
+    setSkillCasterId(pieceId);
+    setPending({ cardId: p.skill, pieceIds: [], cell: null });
   };
 
   const handleCell = (x: number, y: number) => {
@@ -283,18 +374,52 @@ export default function BattlePage() {
           p.path[p.path.length - 1].x === x && p.path[p.path.length - 1].y === y,
       );
 
-      if (sel && sel.team === 'player' && sel.alive && sel.placed && !sel.acted) {
-        if (sel.heal > 0) {
-          // 治疗:点击其他己方棋子的移动后位置(若已移动)或原位置(若未移动)选择治疗目标
-          if (movedPiece && movedPiece.id !== sel.id) {
-            setHealChoice({ x, y, pieceId: movedPiece.id });
+      // 指令向导:已选择攻击/治疗时机后,引导锁定目标 / 规划移动
+      if (pieceCmd && pieceCmd.order !== null) {
+        const cmdPiece = state.pieces.find((p) => p.id === pieceCmd.pieceId);
+        if (cmdPiece && cmdPiece.team === 'player' && cmdPiece.alive && cmdPiece.placed && !cmdPiece.acted) {
+          const isHealer = cmdPiece.heal > 0 && cmdPiece.atk <= 0;
+          // 先攻击/治疗流程:先锁定目标;先移动流程:随时可锁定目标
+          const canTarget = pieceCmd.order === 'first' ? !pieceCmd.targetId : true;
+          if (canTarget) {
+            if (isHealer) {
+              const ally = occupant && occupant.team === 'player' && occupant.id !== cmdPiece.id ? occupant : null;
+              if (ally && healTargetIds.has(ally.id)) {
+                b.issue(cmdPiece.id, { setHealTarget: ally.id });
+                setPieceCmd({ ...pieceCmd, targetId: ally.id });
+                return;
+              }
+            } else {
+              const enemy = occupant && occupant.team === 'enemy' ? occupant : null;
+              if (enemy && visible.has(key(x, y)) && attackTargetIds.has(enemy.id)) {
+                b.issue(cmdPiece.id, { setAttackTarget: enemy.id });
+                setPieceCmd({ ...pieceCmd, targetId: enemy.id });
+                return;
+              }
+            }
+          }
+          // 先移动流程:随时规划移动;先攻击/治疗流程:锁定目标后再规划移动
+          const canMove = pieceCmd.order === 'first' ? !!pieceCmd.targetId : true;
+          if (canMove && moveCells.has(key(x, y))) {
+            const now = Date.now();
+            const last = lastMoveClickRef.current;
+            const isDouble = !!last && last.pieceId === cmdPiece.id && last.x === x && last.y === y && now - last.time < 400;
+            if (isDouble) {
+              lastMoveClickRef.current = null;
+              setMoveConfirm({ pieceId: cmdPiece.id, x, y });
+            } else {
+              lastMoveClickRef.current = { pieceId: cmdPiece.id, x, y, time: now };
+              b.issue(cmdPiece.id, { waypoint: { x, y } });
+            }
             return;
           }
-          if (occupant && occupant.team === 'player' && occupant.id !== sel.id && occupant.path.length === 0) {
-            setHealChoice({ x, y, pieceId: occupant.id });
-            return;
-          }
+          return;
         }
+        setPieceCmd(null);
+        return;
+      }
+
+      if (sel && sel.team === 'player' && sel.alive && sel.placed && !sel.acted) {
         // 点击移动后的新位置棋子(路径终点):单击展示信息,双击确认移动
         if (movedPiece && movedPiece.id === sel.id) {
           const now = Date.now();
@@ -323,21 +448,6 @@ export default function BattlePage() {
           }
           return;
         }
-        if (occupant && occupant.team === 'enemy' && visible.has(key(x, y)) && sel.atk > 0) {
-          // 判断是否能攻击到该敌人:当前/移动后落点已在攻击范围内,或可移动到能攻击到它的位置
-          const ax = sel.path.length ? sel.path[sel.path.length - 1].x : sel.x;
-          const ay = sel.path.length ? sel.path[sel.path.length - 1].y : sel.y;
-          const inRange = canAttack(sel.type, sel.range, occupant.x - ax, occupant.y - ay);
-          const canReach = inRange || findAttackCell(state, sel, occupant) !== null;
-          if (canReach) {
-            setAttackOrderChoice({ pieceId: sel.id, targetId: occupant.id });
-          } else {
-            // 无法攻击:取消当前棋子操作,并切到敌方信息面板
-            if (sel.path.length > 0) b.issue(sel.id, { clearPath: true });
-            b.select(occupant.id);
-          }
-          return;
-        }
       }
 
       // 点击移动后的新位置棋子(非当前选中,如已确认棋子):选中并展示信息
@@ -354,15 +464,24 @@ export default function BattlePage() {
 
       if (occupant) {
         if (occupant.team === 'enemy' && !visible.has(key(x, y))) { b.select(null); return; }
-        if (occupant.team === 'player' && occupant.id === state.selectedId) {
-          // 再次点击已选中的棋子:切换信息框(职业/血量/射程/移动/攻击/增益减益等)
-          setSelectTick((t) => t + 1);
+
+        // 点击己方棋子:选中;攻击型/治疗型棋子直接弹出时机向导
+        if (occupant.team === 'player') {
+          if (sel && sel.team === 'player' && !sel.acted && sel.path.length > 0) {
+            b.issue(sel.id, { clearPath: true });
+          }
+          b.select(occupant.id);
+          if (!occupant.acted && (occupant.atk > 0 || occupant.heal > 0)) {
+            setPending(null);
+            setConfirmPlay(null);
+            setPieceCmd({ pieceId: occupant.id, order: null, targetId: null });
+          } else {
+            setSelectTick((t) => t + 1);
+          }
           return;
         }
-        // 点击其他棋子:取消当前棋子的移动草稿,棋子回到原位,再选中新棋子
-        if (sel && sel.team === 'player' && !sel.acted && sel.path.length > 0) {
-          b.issue(sel.id, { clearPath: true });
-        }
+
+        // 点击敌方棋子:选中查看情报
         b.select(occupant.id);
         return;
       }
@@ -396,7 +515,7 @@ export default function BattlePage() {
 
   // 指令阶段结束:若仍有剩余行动点,先弹窗提醒(教程关卡不拦截,直接推进)
   const handleEndPhase = () => {
-    if (state.phase === 'command' && state.ap > 0 && level?.id !== 0) {
+    if (state.phase === 'command' && state.ap > 0 && level?.id !== 0 && !state.skillMode) {
       setEndCommandConfirm(true);
       return;
     }
@@ -410,43 +529,6 @@ export default function BattlePage() {
 
   const paused = (state.phase === 'deploy' && summonOpen) || (state.phase === 'command' && enemyDeckOpen);
 
-  const choiceTarget = healChoice ? state.pieces.find((p) => p.id === healChoice.pieceId) : null;
-  const choiceCanMove = healChoice ? moveCells.has(key(healChoice.x, healChoice.y)) : false;
-
-  const confirmHealChoice = () => {
-    if (!healChoice) return;
-    const sel = state.pieces.find((p) => p.id === state.selectedId);
-    if (!sel) { setHealChoice(null); return; }
-    const target = state.pieces.find((p) => p.id === healChoice.pieceId);
-    if (!target) { setHealChoice(null); return; }
-    // 治疗范围以双方「移动后的最终落点」为基准
-    const ax = sel.path.length ? sel.path[sel.path.length - 1].x : sel.x;
-    const ay = sel.path.length ? sel.path[sel.path.length - 1].y : sel.y;
-    const tx = target.path.length ? target.path[target.path.length - 1].x : target.x;
-    const ty = target.path.length ? target.path[target.path.length - 1].y : target.y;
-    if (dist(ax, ay, tx, ty) > sel.range) {
-      // 超出治疗范围:智能移动到能治疗到该目标的适合格子
-      const cell = findAttackCell(state, sel, { ...target, x: tx, y: ty });
-      if (cell) {
-        b.issue(sel.id, { waypoint: cell });
-        b.issue(sel.id, { setHealTarget: healChoice.pieceId });
-        setHealChoice(null);
-        return;
-      }
-      showActionHint('无法移动到能治疗该棋子的位置');
-      return;
-    }
-    b.issue(sel.id, { setHealTarget: healChoice.pieceId });
-    setHealChoice(null);
-  };
-
-  const confirmMoveChoice = () => {
-    if (!healChoice) return;
-    const sel = state.pieces.find((p) => p.id === state.selectedId);
-    if (sel) b.issue(sel.id, { waypoint: { x: healChoice.x, y: healChoice.y } });
-    setHealChoice(null);
-  };
-
   const moveConfirmPiece = moveConfirm ? state.pieces.find((p) => p.id === moveConfirm.pieceId) : null;
 
   const confirmMove = () => {
@@ -456,14 +538,21 @@ export default function BattlePage() {
     setMoveConfirm(null);
   };
 
-  const attackOrderPiece = attackOrderChoice ? state.pieces.find((p) => p.id === attackOrderChoice.pieceId) : null;
-  const attackOrderTarget = attackOrderChoice ? state.pieces.find((p) => p.id === attackOrderChoice.targetId) : null;
+  const cmdPiece = pieceCmd ? state.pieces.find((p) => p.id === pieceCmd.pieceId) : null;
+  const isCmdHealer = !!cmdPiece && cmdPiece.heal > 0 && cmdPiece.atk <= 0;
 
-  const chooseAttackOrder = (order: 'first' | 'after') => {
-    if (!attackOrderChoice) return;
-    b.issue(attackOrderChoice.pieceId, { attackOrder: order });
-    b.issue(attackOrderChoice.pieceId, { setAttackTarget: attackOrderChoice.targetId });
-    setAttackOrderChoice(null);
+  const choosePieceOrder = (order: 'first' | 'after') => {
+    if (!pieceCmd) return;
+    const p = state.pieces.find((q) => q.id === pieceCmd.pieceId);
+    const isHealer = !!p && p.heal > 0 && p.atk <= 0;
+    b.issue(pieceCmd.pieceId, isHealer ? { healOrder: order } : { attackOrder: order });
+    setPieceCmd({ pieceId: pieceCmd.pieceId, order, targetId: null });
+  };
+
+  const cancelPieceCmd = () => {
+    if (pieceCmd) b.issue(pieceCmd.pieceId, { clearPath: true });
+    setPieceCmd(null);
+    b.select(null);
   };
 
   const confirmCard = confirmPlay ? CARDS_BY_ID[confirmPlay.cardId] : null;
@@ -473,7 +562,12 @@ export default function BattlePage() {
 
   const confirmPlayCard = () => {
     if (!confirmPlay) return;
-    b.playCard(confirmPlay.cardId, { pieceIds: confirmPlay.pieceIds, cell: confirmPlay.cell ?? undefined });
+    if (skillCasterId) {
+      b.castSkill(skillCasterId, { pieceIds: confirmPlay.pieceIds, cell: confirmPlay.cell ?? undefined });
+      setSkillCasterId(null);
+    } else {
+      b.playCard(confirmPlay.cardId, { pieceIds: confirmPlay.pieceIds, cell: confirmPlay.cell ?? undefined });
+    }
     setConfirmPlay(null);
     setPending(null);
   };
@@ -550,12 +644,14 @@ export default function BattlePage() {
       <MobileBattleView
         b={b}
         visible={visible}
-        moveCells={moveCells}
-        blockedCells={blockedCells}
+        moveCells={wizardMoveCells}
         enemyRangeCells={enemyRangeCells}
+        attackRangeCells={wizardAttackCells}
         selectTick={selectTick}
         targetPieceIds={targetPieceIds}
         selectedTargetIds={selectedTargetIds}
+        attackTargetIds={attackTargetIds}
+        healTargetIds={healTargetIds}
         pendingCardId={pending?.cardId ?? null}
         pendingCount={pending?.pieceIds.length ?? 0}
         pendingNeed={pendingCard?.target.count ?? 0}
@@ -567,8 +663,9 @@ export default function BattlePage() {
         onAutoStyle={setAutoStyle}
         onCell={handleCell}
         onPlayCard={handlePlayCard}
+        onCastSkill={handlePlaySkill}
         onConfirmCard={confirmPendingCard}
-        onCancelCard={() => { setPending(null); setConfirmPlay(null); }}
+        onCancelCard={() => { setPending(null); setConfirmPlay(null); setSkillCasterId(null); }}
         onPhaseTimeout={handlePhaseTimeout}
         onAdvance={handleEndPhase}
         onOpenEnemyDeck={() => setEnemyDeckOpen(true)}
@@ -593,6 +690,25 @@ export default function BattlePage() {
           document.body
         )}
 
+      {pieceCmdHint &&
+        createPortal(
+          <div className="fixed top-14 left-1/2 -translate-x-1/2 z-[90] flex items-center gap-2">
+            <div className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-background-950/85 border border-accent-500/60 shadow-lg">
+              <span className="w-6 h-6 shrink-0 flex items-center justify-center rounded-full bg-accent-500/20 text-accent-300">
+                <i className="ri-crosshair-2-line w-4 h-4 flex items-center justify-center"></i>
+              </span>
+              <span className="font-label text-[12px] text-foreground-50 whitespace-nowrap">{pieceCmdHint}</span>
+            </div>
+            <button
+              onClick={cancelPieceCmd}
+              className="pointer-events-auto font-label text-[11px] px-3 py-2 rounded-full bg-secondary-500/90 text-background-50 cursor-pointer whitespace-nowrap"
+            >
+              取消
+            </button>
+          </div>,
+          document.body
+        )}
+
       {drawReveal &&
         createPortal(
           <DrawReveal cardId={drawReveal} deckLeft={state.deck.length} onDone={() => setDrawReveal(null)} />,
@@ -612,74 +728,50 @@ export default function BattlePage() {
         />
       )}
 
-      {healChoice && choiceTarget && (
+      {pieceCmd && pieceCmd.order === null && cmdPiece && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-background-950/70 backdrop-blur-sm" onClick={() => setHealChoice(null)}></div>
+          <div className="absolute inset-0 bg-background-950/70 backdrop-blur-sm" onClick={cancelPieceCmd}></div>
           <div className="relative rune-border rounded-lg w-full max-w-xs p-5 bg-background-100">
             <div className="text-center mb-4">
-              <div className="w-12 h-12 mx-auto mb-2 flex items-center justify-center rounded-full bg-accent-500/15 border border-accent-500/40 text-accent-300">
-                <i className={`${BEASTS[choiceTarget.type].icon} text-2xl w-6 h-6 flex items-center justify-center`}></i>
+              <div className="w-12 h-12 mx-auto mb-2 flex items-center justify-center rounded-full bg-primary-500/15 border border-primary-500/40 text-primary-300">
+                <i className={`${BEASTS[cmdPiece.type].icon} text-2xl w-6 h-6 flex items-center justify-center`}></i>
               </div>
-              <h2 className="font-heading text-lg text-foreground-950">{BEASTS[choiceTarget.type].name}</h2>
-              <p className="text-xs text-foreground-600 mt-1">选择对该己方棋子的操作</p>
+              <h2 className="font-heading text-lg text-foreground-950">{BEASTS[cmdPiece.type].name} · 行动指令</h2>
+              <p className="text-xs text-foreground-600 mt-1">请选择执行阶段的{isCmdHealer ? '治疗' : '攻击'}时机。</p>
+              {state.skillMode && cmdPiece.skill && (() => {
+                const sk = CARDS_BY_ID[cmdPiece.skill];
+                if (!sk) return null;
+                return (
+                  <div className="mt-2 text-left rounded-md border border-accent-500/30 bg-accent-500/5 px-2.5 py-2">
+                    <div className="flex items-center gap-1.5">
+                      <i className="ri-magic-line w-3.5 h-3.5 flex items-center justify-center text-accent-300"></i>
+                      <span className="font-heading text-xs text-accent-300">{sk.name}</span>
+                      <span className="ml-auto font-heading text-[10px] text-foreground-600 tabular-nums shrink-0">
+                        {cmdPiece.skillCd > 0 ? `冷却 ${cmdPiece.skillCd} 回合` : cmdPiece.usedSkill ? '本回合已用' : '就绪'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-foreground-700 leading-relaxed mt-1">{sk.desc}</p>
+                  </div>
+                );
+              })()}
             </div>
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2 mt-3">
               <button
-                onClick={confirmHealChoice}
-                className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-md font-label text-sm bg-accent-500 text-background-50 hover:bg-accent-600 cursor-pointer"
-              >
-                <i className="ri-heart-pulse-line w-4 h-4 flex items-center justify-center"></i>
-                治疗
-              </button>
-              <button
-                onClick={confirmMoveChoice}
-                disabled={!choiceCanMove}
-                className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-md font-label text-sm bg-primary-500 text-background-50 hover:bg-primary-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-              >
-                <i className="ri-run-line w-4 h-4 flex items-center justify-center"></i>
-                移动到此格
-              </button>
-              <button
-                onClick={() => setHealChoice(null)}
-                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md font-label text-sm border border-background-300 text-foreground-700 hover:text-foreground-950 hover:border-background-400 cursor-pointer"
-              >
-                取消
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {attackOrderChoice && attackOrderPiece && attackOrderTarget && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-background-950/70 backdrop-blur-sm" onClick={() => setAttackOrderChoice(null)}></div>
-          <div className="relative rune-border rounded-lg w-full max-w-xs p-5 bg-background-100">
-            <div className="text-center mb-4">
-              <div className="w-12 h-12 mx-auto mb-2 flex items-center justify-center rounded-full bg-secondary-500/15 border border-secondary-500/40 text-secondary-300">
-                <i className={`${BEASTS[attackOrderTarget.type].icon} text-2xl w-6 h-6 flex items-center justify-center`}></i>
-              </div>
-              <h2 className="font-heading text-lg text-foreground-950">攻击【{BEASTS[attackOrderTarget.type].name}】</h2>
-              <p className="text-xs text-foreground-600 mt-1">
-                {BEASTS[attackOrderPiece.type].name} 将攻击该目标，请选择执行阶段的攻击时机。
-              </p>
-            </div>
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={() => chooseAttackOrder('first')}
+                onClick={() => choosePieceOrder('first')}
                 className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-md font-label text-sm bg-primary-500 text-background-50 hover:bg-primary-600 cursor-pointer"
               >
-                <i className="ri-sword-line w-4 h-4 flex items-center justify-center"></i>
-                先攻击，再移动
+                <i className={isCmdHealer ? 'ri-heart-pulse-line w-4 h-4 flex items-center justify-center' : 'ri-sword-line w-4 h-4 flex items-center justify-center'}></i>
+                先{isCmdHealer ? '治疗' : '攻击'}，再移动
               </button>
               <button
-                onClick={() => chooseAttackOrder('after')}
+                onClick={() => choosePieceOrder('after')}
                 className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-md font-label text-sm bg-accent-500 text-background-50 hover:bg-accent-600 cursor-pointer"
               >
                 <i className="ri-run-line w-4 h-4 flex items-center justify-center"></i>
-                先移动，再攻击
+                先移动，再{isCmdHealer ? '治疗' : '攻击'}
               </button>
               <button
-                onClick={() => setAttackOrderChoice(null)}
+                onClick={cancelPieceCmd}
                 className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md font-label text-sm border border-background-300 text-foreground-700 hover:text-foreground-950 hover:border-background-400 cursor-pointer"
               >
                 取消

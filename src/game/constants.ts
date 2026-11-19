@@ -25,6 +25,32 @@ export const key = (x: number, y: number) => `${x},${y}`;
 export const inBounds = (x: number, y: number, cols: number, rows: number) =>
   x >= 0 && y >= 0 && x < cols && y < rows;
 
+/** 地图随机地形占比:每局约 10% 的格子生成障碍物或黑洞 */
+export const TERRAIN_RATIO = 0.1;
+
+/** 某格是否为障碍物(阻挡移动与远程攻击) */
+export const isObstacle = (obstacles: string[], x: number, y: number) => obstacles.includes(key(x, y));
+
+/** 某格是否为黑洞(棋子落入后被随机传送) */
+export const isBlackHole = (blackHoles: string[], x: number, y: number) => blackHoles.includes(key(x, y));
+
+/** 两点之间(不含端点)的直线 / 对角线上是否存在障碍物;非共线输入直接视为不遮挡 */
+export const blocksLine = (obstacles: string[], ax: number, ay: number, bx: number, by: number): boolean => {
+  const dx = bx - ax;
+  const dy = by - ay;
+  if (dx !== 0 && dy !== 0 && Math.abs(dx) !== Math.abs(dy)) return false;
+  const sx = Math.sign(dx);
+  const sy = Math.sign(dy);
+  let x = ax + sx;
+  let y = ay + sy;
+  while (x !== bx || y !== by) {
+    if (isObstacle(obstacles, x, y)) return true;
+    x += sx;
+    y += sy;
+  }
+  return false;
+};
+
 /** 切比雪夫距离(八方向,用于攻击/治疗范围判定) */
 export const dist = (ax: number, ay: number, bx: number, by: number) =>
   Math.max(Math.abs(ax - bx), Math.abs(ay - by));

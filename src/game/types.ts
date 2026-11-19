@@ -52,6 +52,14 @@ export interface Piece {
   mode: Mode;
   /** 攻击时机:先攻击再移动 / 先移动再攻击(仅攻击模式生效) */
   attackOrder: AttackOrder;
+  /** 治疗时机:先治疗再移动 / 先移动再治疗(仅治疗生效) */
+  healOrder: AttackOrder;
+  /** 棋子自带技能(其召唤卡牌 id),第二版「技能模式」下可释放 */
+  skill: string;
+  /** 技能剩余冷却回合数(0 = 就绪) */
+  skillCd: number;
+  /** 本回合是否已释放过技能(每回合限一次) */
+  usedSkill: boolean;
   /** 棋子朝向:初始面向对手,移动后朝向最后一次移动的方向 */
   facing: Facing;
   /** 移动路径:指令阶段规划的完整步进序列(每项为下一步落点,按顺序执行) */
@@ -93,7 +101,7 @@ export interface LogEntry {
 }
 
 export interface TurnEvent {
-  type: 'attack' | 'heal' | 'shield' | 'revive' | 'death' | 'card' | 'fail';
+  type: 'attack' | 'heal' | 'shield' | 'revive' | 'death' | 'card' | 'fail' | 'teleport';
   x: number;
   y: number;
   amount?: number;
@@ -145,6 +153,8 @@ export interface GameState {
   skipCards: boolean;
   /** 是否启用灵主机制(灵主重生 + 灵主胜负判定)。第 0 关关闭,其余默认开启 */
   lordBattle: boolean;
+  /** 第二版「技能模式」:去除卡牌与行动点,技能绑定棋子并带冷却 */
+  skillMode: boolean;
   /** 预设敌方灵主卡牌 id(教程关卡指定敌方某只棋子为灵主) */
   enemyLordPreset: string | null;
   enemyDeck: string[];
@@ -154,6 +164,12 @@ export interface GameState {
   /** 教程关卡敌方棋子血量覆盖(如第 0 关敌方仅 1 血) */
   enemyHpOverride: number | null;
   dotZones: DotZone[];
+  /** 地形:障碍物格(阻挡棋子移动与远程攻击) */
+  obstacles: string[];
+  /** 地形:黑洞格(棋子落入后随机传送到任意位置) */
+  blackHoles: string[];
+  /** 是否生成随机地形(常规对局开启,教程关卡关闭) */
+  terrainEnabled: boolean;
   winner: Winner;
   log: LogEntry[];
   selectedId: string | null;

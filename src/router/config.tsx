@@ -14,6 +14,10 @@ const routes: RouteObject[] = [
     element: <Battle />,
   },
   {
+    path: "/play/battle2",
+    element: <Battle skillMode />,
+  },
+  {
     path: "/play/tutorial",
     element: <Tutorial />,
   },

@@ -49,11 +49,13 @@ interface Props {
   b: Battle;
   visible: Set<string>;
   moveCells: Set<string>;
-  blockedCells: Set<string>;
   enemyRangeCells: Set<string>;
+  attackRangeCells: Set<string>;
   selectTick: number;
   targetPieceIds: Set<string>;
   selectedTargetIds: Set<string>;
+  attackTargetIds: Set<string>;
+  healTargetIds: Set<string>;
   pendingCardId: string | null;
   pendingCount: number;
   pendingNeed: number;
@@ -65,6 +67,7 @@ interface Props {
   onAutoStyle: (s: AutoCommandStyle) => void;
   onCell: (x: number, y: number) => void;
   onPlayCard: (cardId: string) => void;
+  onCastSkill: (pieceId: string) => void;
   onConfirmCard: () => void;
   onCancelCard: () => void;
   onPhaseTimeout: () => void;
@@ -81,11 +84,13 @@ export default function MobileBattleView({
   b,
   visible,
   moveCells,
-  blockedCells,
   enemyRangeCells,
+  attackRangeCells,
   selectTick,
   targetPieceIds,
   selectedTargetIds,
+  attackTargetIds,
+  healTargetIds,
   pendingCardId,
   pendingCount,
   pendingNeed,
@@ -97,6 +102,7 @@ export default function MobileBattleView({
   onAutoStyle,
   onCell,
   onPlayCard,
+  onCastSkill,
   onConfirmCard,
   onCancelCard,
   onPhaseTimeout,
@@ -110,6 +116,7 @@ export default function MobileBattleView({
   const [tab, setTab] = useState<Tab>('hand');
   const [open, setOpen] = useState(false);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+  const [skillPreviewId, setSkillPreviewId] = useState<string | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<BattleBoardHandle>(null);
   const [overlayH, setOverlayH] = useState(0);
@@ -147,6 +154,7 @@ export default function MobileBattleView({
   }, [state.phase]);
 
   // 使用卡牌技能(进入目标选择)时收起手牌,使用完/取消后再次弹出
+  // 技能模式无手牌:释放技能后停留在操作条(对话框面板),不弹出棋子信息面板
   const prevPendingRef = useRef<string | null>(null);
   useEffect(() => {
     const prev = prevPendingRef.current;
@@ -154,12 +162,12 @@ export default function MobileBattleView({
     if (pendingCardId && !prev) {
       setOpen(false);
     } else if (!pendingCardId && prev) {
-      if (state.phase === 'command') {
+      if (state.phase === 'command' && !state.skillMode) {
         setTab('hand');
         setOpen(true);
       }
     }
-  }, [pendingCardId]);
+  }, [pendingCardId, state.skillMode]);
 
   // 已去除阶段倒计时:所有阶段均不设时间限制
   const countdown = false;
@@ -235,6 +243,11 @@ export default function MobileBattleView({
       setTab('cmd');
     }
   }, [isCommand, selectedPiece]);
+
+  // 切换选中棋子或离开指令阶段时,收起技能描述浮层
+  useEffect(() => {
+    setSkillPreviewId(null);
+  }, [selectedPiece?.id, isCommand]);
 
   // 选中新棋子时不自动弹出信息框;对同一棋子新增路径(开始规划移动)时收起面板露出棋盘
   const prevSelRef = useRef<{ id: string | null; len: number }>({ id: null, len: 0 });
@@ -387,7 +400,7 @@ export default function MobileBattleView({
       return (
         <div className={`flex flex-col gap-2 ${selectedPiece ? '' : 'h-full min-h-0 overflow-y-auto'}`}>
           {selectedPiece ? (
-            <PieceInfoPanel piece={selectedPiece} onClose={() => b.select(null)} />
+            <PieceInfoPanel piece={selectedPiece} onClose={() => b.select(null)} skillMode={state.skillMode} />
           ) : (
           <>
           {/* 自动指令视图 */}
@@ -445,6 +458,7 @@ export default function MobileBattleView({
               <i className="ri-eraser-line w-3 h-3 flex items-center justify-center"></i>
               清除
             </button>
+            {!state.skillMode && (
             <button
               onClick={onOpenEnemyDeck}
               disabled={b.busy}
@@ -453,6 +467,7 @@ export default function MobileBattleView({
               <i className="ri-eye-line w-3 h-3 flex items-center justify-center"></i>
               敌方牌组
             </button>
+            )}
           </div>
           </>
           )}
@@ -495,7 +510,7 @@ export default function MobileBattleView({
             <span className="w-8 shrink-0"></span>
           )}
         </div>
-        {!intro && <ApBar ap={state.ap} />}
+        {!intro && !state.skillMode && <ApBar ap={state.ap} />}
       </header>
 
       {/* 棋盘区域 - 占据所有可用空间 */}
@@ -506,10 +521,12 @@ export default function MobileBattleView({
           visible={visible}
           selectedId={state.selectedId}
           moveCells={moveCells}
-          blockedCells={blockedCells}
           enemyRangeCells={enemyRangeCells}
+          attackRangeCells={attackRangeCells}
           targetPieceIds={targetPieceIds}
           selectedTargetIds={selectedTargetIds}
+          attackTargetIds={attackTargetIds}
+          healTargetIds={healTargetIds}
           events={b.events}
           onCellClick={onCell}
           bottomOverlay={overlayH + actionBarH}
@@ -534,7 +551,7 @@ export default function MobileBattleView({
         {showCard1Piece && (
           <div className="absolute left-0 right-0 bottom-0 z-[45] px-2 pt-2 pb-2">
             <div className="rounded-t-xl border-t border-background-200 bg-background-100/95 backdrop-blur px-2 pt-2 pb-2">
-              <PieceInfoPanel piece={selectedPiece} onClose={() => b.select(null)} />
+              <PieceInfoPanel piece={selectedPiece} onClose={() => b.select(null)} skillMode={state.skillMode} />
             </div>
           </div>
         )}
@@ -542,6 +559,42 @@ export default function MobileBattleView({
         {/* 指令阶段:面板收起后,选中棋子显示精简操作条(撤销 / 待机) */}
         {isCommand && selectedPiece && !open && !selectedPiece.acted && (
           <div ref={actionBarRef} className="absolute left-0 right-0 bottom-0 z-[45] px-2 pb-2">
+            {/* 技能描述浮层:点击技能按钮后,在操作条上方以对话框形式展示 */}
+            {state.skillMode && selectedPiece.skill && skillPreviewId === selectedPiece.id && (() => {
+              const card = CARDS_BY_ID[selectedPiece.skill];
+              if (!card) return null;
+              const blocked = selectedPiece.skillCd > 0 || selectedPiece.usedSkill;
+              return (
+                <div className="absolute bottom-full left-0 right-0 mb-2">
+                  <div className="rune-border rounded-lg bg-background-950/95 backdrop-blur px-3 py-2.5 shadow-lg">
+                    <div className="flex items-center gap-1.5">
+                      <i className="ri-magic-line w-3.5 h-3.5 flex items-center justify-center text-accent-300"></i>
+                      <span className="font-heading text-xs text-accent-300">{card.name}</span>
+                      <span className="ml-auto font-heading text-[10px] text-foreground-500 tabular-nums shrink-0">
+                        {selectedPiece.skillCd > 0 ? `冷却 ${selectedPiece.skillCd} 回合` : selectedPiece.usedSkill ? '本回合已用' : '就绪'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-foreground-700 leading-relaxed mt-1.5">{card.desc}</p>
+                    <div className="flex items-center gap-1.5 mt-2">
+                      <button
+                        onClick={() => { setSkillPreviewId(null); onCastSkill(selectedPiece.id); }}
+                        disabled={blocked}
+                        className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md font-label text-xs bg-accent-500 text-background-50 hover:bg-accent-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+                      >
+                        <i className="ri-magic-line w-3.5 h-3.5 flex items-center justify-center"></i>
+                        释放技能
+                      </button>
+                      <button
+                        onClick={() => setSkillPreviewId(null)}
+                        className="shrink-0 px-2.5 py-1.5 rounded-md font-label text-xs border border-background-400 text-foreground-300 hover:text-foreground-100 cursor-pointer whitespace-nowrap"
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
             <div className="flex items-center gap-1.5 rounded-xl border border-background-300 bg-background-100/95 backdrop-blur px-2 py-1.5 shadow-lg">
               <span className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md bg-accent-500/15 border border-accent-500/40 text-accent-300">
                 <i className={`${BEASTS[selectedPiece.type].icon} text-sm w-4 h-4 flex items-center justify-center`}></i>
@@ -550,6 +603,22 @@ export default function MobileBattleView({
                 {BEASTS[selectedPiece.type].name}
               </span>
               <div className="flex-1"></div>
+              {state.skillMode && selectedPiece.skill && (() => {
+                const card = CARDS_BY_ID[selectedPiece.skill];
+                const onCd = selectedPiece.skillCd > 0;
+                const used = selectedPiece.usedSkill;
+                return (
+                  <button
+                    onClick={() => setSkillPreviewId((cur) => (cur === selectedPiece.id ? null : selectedPiece.id))}
+                    className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-accent-500/60 text-accent-300 hover:bg-accent-500/10 cursor-pointer whitespace-nowrap"
+                  >
+                    <i className="ri-magic-line w-3.5 h-3.5 flex items-center justify-center"></i>
+                    <span className="font-label text-[10px] max-w-[72px] truncate">{card ? card.name : '技能'}</span>
+                    {onCd && <span className="font-heading text-[10px] text-secondary-300">{selectedPiece.skillCd}</span>}
+                    {used && <span className="font-label text-[9px] text-foreground-600">已用</span>}
+                  </button>
+                );
+              })()}
               <button
                 onClick={() => b.issue(selectedPiece.id, { undoStep: true })}
                 disabled={selectedPiece.path.length === 0}
@@ -563,7 +632,7 @@ export default function MobileBattleView({
                   b.issue(selectedPiece.id, { confirm: true });
                   b.select(null);
                 }}
-                disabled={state.ap < 1}
+                disabled={!state.skillMode && state.ap < 1}
                 data-tutorial="confirm"
                 className="standby-pulse shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-md text-background-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
               >

@@ -20,6 +20,14 @@ const modes = [
     ready: true,
   },
   {
+    key: 'ai2',
+    name: '单人 VS AI 第二版',
+    desc: '去除卡牌与行动点,技能绑定棋子并带冷却,体验全新对战机制。',
+    icon: 'ri-cpu-line',
+    ready: true,
+    path: '/play/battle2',
+  },
+  {
     key: 'local',
     name: '本地双人',
     desc: '两人同屏轮流下达指令,面对面对战。',

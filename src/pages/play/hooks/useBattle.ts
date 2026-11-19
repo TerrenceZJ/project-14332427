@@ -3,7 +3,7 @@ import type { GameState, TurnEvent, TurnFrame, Mode, Pt, AutoCommandStyle } from
 import {
   createGame, placePiece, unplacePiece, setLord, autoDeploy, startBattle,
   command as cmd, selectPiece, executeTurn, beginNextTurn, advancePhase, prepareExecute,
-  playCard as playCardEngine, redeployPiece, toggleLineup as toggleLineupEngine,
+  playCard as playCardEngine, castSkill as castSkillEngine, redeployPiece, toggleLineup as toggleLineupEngine,
   randomLineup as randomLineupEngine, autoCommand as autoCommandEngine, confirmAll as confirmAllEngine,
 } from '@/game/engine';
 
@@ -44,12 +44,16 @@ export function useBattle(createInitial: () => GameState = () => createGame()) {
     setState((s) => startBattle(s));
   }, []);
 
-  const issue = useCallback((id: string, patch: { waypoint?: { x: number; y: number }; clearPath?: boolean; confirm?: boolean; mode?: Mode; attackOrder?: 'first' | 'after'; undoStep?: boolean; setAttackTarget?: string; setHealTarget?: string }) => {
+  const issue = useCallback((id: string, patch: { waypoint?: { x: number; y: number }; clearPath?: boolean; confirm?: boolean; mode?: Mode; attackOrder?: 'first' | 'after'; healOrder?: 'first' | 'after'; undoStep?: boolean; setAttackTarget?: string; setHealTarget?: string }) => {
     setState((s) => cmd(s, id, patch));
   }, []);
 
   const playCard = useCallback((cardId: string, targets: CardTargets) => {
     setState((s) => playCardEngine(s, cardId, 'player', targets));
+  }, []);
+
+  const castSkill = useCallback((pieceId: string, targets: CardTargets) => {
+    setState((s) => castSkillEngine(s, pieceId, targets));
   }, []);
 
   /** 指令阶段:AI 代玩家为所有棋子自动下达指令(可指定风格) */
@@ -149,7 +153,7 @@ export function useBattle(createInitial: () => GameState = () => createGame()) {
     setState(createInitial());
   }, [createInitial]);
 
-  return { state, events, busy, speed, place, unplace, makeLord, redeploy, randomize, toggleLineup, randomLineup, select, start, issue, playCard, autoCommand, confirmAll, clearAllPaths, undoLastStep, advance, toggleSpeed, skipExecution, restart };
+  return { state, events, busy, speed, place, unplace, makeLord, redeploy, randomize, toggleLineup, randomLineup, select, start, issue, playCard, castSkill, autoCommand, confirmAll, clearAllPaths, undoLastStep, advance, toggleSpeed, skipExecution, restart };
 }
 
 /** 对战控制器的返回类型,供子组件复用 */
